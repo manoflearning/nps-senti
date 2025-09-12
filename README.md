@@ -1,4 +1,4 @@
-# National Pension Sentiment Analysis
+# Sentiment Analysis of the National Pension Service
 
 ## Directory Structure [DRAFT]
 
@@ -15,7 +15,7 @@
 - `reports/` stores publishable outputs (e.g., dashboard.html).
 
 ```bash
-national-pension-sentiment-analysis/
+nps-senti/
 ├─ pyproject.toml
 ├─ README.md
 ├─ src/
