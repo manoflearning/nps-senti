@@ -29,8 +29,6 @@ jobs:
           enable-cache: true
       - name: Set up Python
         run: uv python install 3.11
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
       - name: Sync deps
         run: uv sync --locked --dev
 
@@ -51,8 +49,6 @@ jobs:
           enable-cache: true
       - name: Set up Python
         run: uv python install 3.11
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
       - name: Sync deps
         run: uv sync --locked --dev
 
