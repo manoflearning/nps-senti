@@ -6,9 +6,22 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
 
+[project.scripts]
+nps-senti = "nps_senti.cli:app"
+
 [dependency-groups]
 dev = [
     "pyright>=1.1.405",
     "pytest>=8.4.2",
     "ruff>=0.13.0",
 ]
+
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"
