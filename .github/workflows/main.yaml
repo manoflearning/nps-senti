@@ -8,16 +8,7 @@ on:
 
 name: CI
 
-jobs:
-  ci:
-    runs-on: ubuntu-latest
-    name: Pass
-    needs:
-      - check_style_python
-      - test_python
-    steps:
-      - run: exit 0
-  
+jobs:  
   check_style_python:
     name: Check file formatting and style (Python)
     runs-on: ubuntu-latest
