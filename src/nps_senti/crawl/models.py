@@ -28,9 +28,9 @@ class RawItem:
             "url": self.url,
             "title": self.title,
             "content": self.content,
-            "published_at": ensure_utc(self.published_at).isoformat().replace(
-                "+00:00", "Z"
-            ),
+            "published_at": ensure_utc(self.published_at)
+            .isoformat()
+            .replace("+00:00", "Z"),
             "fetched_at": fetched.isoformat().replace("+00:00", "Z"),
             "attachments": list(self.attachments),
             "raw_html": self.raw_html,

@@ -67,13 +67,13 @@ def test_parse_detail_extracts_content_and_attachments():
     detail = source.parse_detail(html)
 
     assert "새로운 서비스를 도입한다" in detail.content
-    assert detail.attachments == [
-        "https://www.nps.or.kr/files/press/202311/policy.pdf"
-    ]
+    assert detail.attachments == ["https://www.nps.or.kr/files/press/202311/policy.pdf"]
     assert detail.raw_html.startswith("<html>")
 
 
-def test_iter_items_skips_seen_and_stops_when_page_has_only_seen(monkeypatch: pytest.MonkeyPatch):
+def test_iter_items_skips_seen_and_stops_when_page_has_only_seen(
+    monkeypatch: pytest.MonkeyPatch,
+):
     page1 = load_fixture("press_listing_page1.html")
     page2 = load_fixture("press_listing_page2.html")
     detail = load_fixture("press_detail_202311.html")
@@ -104,12 +104,12 @@ def test_iter_items_skips_seen_and_stops_when_page_has_only_seen(monkeypatch: py
     item = items[0]
     assert item.item_id == "202311"
     assert item.source == "nps_press_release"
-    assert item.attachments == [
-        "https://www.nps.or.kr/files/press/202311/policy.pdf"
-    ]
+    assert item.attachments == ["https://www.nps.or.kr/files/press/202311/policy.pdf"]
 
 
-def test_run_merges_existing_and_new_records(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_run_merges_existing_and_new_records(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     cfg = Config(data_dir=tmp_path)
     cfg.raw_dir.mkdir(parents=True, exist_ok=True)
 
@@ -123,7 +123,9 @@ def test_run_merges_existing_and_new_records(tmp_path: Path, monkeypatch: pytest
         "published_at": "2023-10-28T00:00:00+00:00",
         "fetched_at": "2023-10-29T10:00:00Z",
     }
-    raw_path.write_text(json.dumps(existing_record, ensure_ascii=False) + "\n", encoding="utf-8")
+    raw_path.write_text(
+        json.dumps(existing_record, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
 
     new_item = RawItem(
         source="stub_source",

@@ -101,7 +101,9 @@ class PressReleaseSource(BaseSource):
         parser.feed(html)
         content = parser.content.strip()
         return DetailPage(
-            content="\n".join(line.strip() for line in content.splitlines() if line.strip()),
+            content="\n".join(
+                line.strip() for line in content.splitlines() if line.strip()
+            ),
             attachments=parser.attachments,
             raw_html=html,
         )
@@ -134,11 +136,12 @@ class _ListingParser(HTMLParser):
 
     def handle_starttag(self, tag: str, attrs):
         attr = dict(attrs)
-        classes = attr.get("class", "")
-        if tag == "td" and "title" in classes.split():
+        class_attr = attr.get("class")
+        classes = class_attr.split() if class_attr else []
+        if tag == "td" and "title" in classes:
             self._in_title_td = True
             self._title_parts = []
-        elif tag == "td" and "date" in classes.split():
+        elif tag == "td" and "date" in classes:
             self._in_date_td = True
             self._date_parts = []
 
@@ -212,7 +215,8 @@ class _DetailParser(HTMLParser):
 
     def handle_starttag(self, tag: str, attrs):
         attr = dict(attrs)
-        classes = attr.get("class", "").split()
+        class_attr = attr.get("class")
+        classes = class_attr.split() if class_attr else []
 
         if tag == "div" and "content" in classes:
             self._content_depth += 1
@@ -228,7 +232,9 @@ class _DetailParser(HTMLParser):
             if not href:
                 return
             href_abs = urljoin(_BASE_URL, href)
-            if "attachment" in classes or href.lower().endswith((".pdf", ".hwp", ".docx")):
+            if "attachment" in classes or href.lower().endswith(
+                (".pdf", ".hwp", ".docx")
+            ):
                 if href_abs not in self.attachments:
                     self.attachments.append(href_abs)
 
