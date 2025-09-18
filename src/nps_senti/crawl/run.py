@@ -9,13 +9,16 @@ from ..core.config import Config
 from .models import RawItem, utc_now
 from .sources.base import BaseSource
 from .sources.press_release import PressReleaseSource
+from .sources.korea_policy_rss import KoreaPolicyRSSSource
 
 LOGGER = logging.getLogger(__name__)
 _RECORD_FILE = "press_releases.jsonl"
 
 
 def get_sources() -> list[BaseSource]:
-    return [PressReleaseSource()]
+    # Include a publicly reachable source so the stage can run end-to-end
+    # even if the NPS site structure changes.
+    return [PressReleaseSource(), KoreaPolicyRSSSource(max_items=20)]
 
 
 def run(cfg: Config) -> None:
