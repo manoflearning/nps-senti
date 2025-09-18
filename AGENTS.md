@@ -17,6 +17,7 @@
 - Run pipeline stages explicitly (`crawl`, `preprocess`, `featurize`, `train`, `infer`, `topics`, `analytics`, `viz`) and verify their outputs stay within the `Config` contract.
 - Before adding new code paths, audit adjacent modules for simplification opportunities; prefer pruning complexity to extending it.
 - Keep runtime layers thin—push heavy lifting into pure helpers that are easy to test and reason about.
+- Reflect schema or crawler changes in `docs/` (e.g., `docs/data-schema.md`, `docs/crawl-overview.md`) while you work so the documentation stays current.
 
 ## Testing & QA
 - Back each behavioral change or bug fix with a focused test under `tests/`; lean on realistic fixtures and avoid brittle mocks.
