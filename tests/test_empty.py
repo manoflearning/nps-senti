@@ -3,8 +3,8 @@ from __future__ import annotations
 import unittest
 
 
-class TestPipelineSkeleton(unittest.TestCase):
-    def test_placeholder(self) -> None:
+class TestEmpty(unittest.TestCase):
+    def test_empty(self) -> None:
         self.assertTrue(True)
 
 

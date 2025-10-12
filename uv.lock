@@ -1,17 +1,5 @@
 version = 1
-requires-python = ">=3.12"
-
-[manifest]
-members = [
-    "nps-senti",
-    "nps-senti-analytics",
-    "nps-senti-core",
-    "nps-senti-crawl",
-    "nps-senti-ml",
-    "nps-senti-preprocess",
-    "nps-senti-topics",
-    "nps-senti-viz",
-]
+requires-python = ">=3.14"
 
 [[package]]
 name = "colorama"
@@ -43,16 +31,7 @@ wheels = [
 [[package]]
 name = "nps-senti"
 version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "nps-senti-analytics" },
-    { name = "nps-senti-core" },
-    { name = "nps-senti-crawl" },
-    { name = "nps-senti-ml" },
-    { name = "nps-senti-preprocess" },
-    { name = "nps-senti-topics" },
-    { name = "nps-senti-viz" },
-]
+source = { virtual = "." }
 
 [package.dev-dependencies]
 dev = [
@@ -62,15 +41,6 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "nps-senti-analytics", editable = "packages/analytics" },
-    { name = "nps-senti-core", editable = "packages/core" },
-    { name = "nps-senti-crawl", editable = "packages/crawl" },
-    { name = "nps-senti-ml", editable = "packages/ml" },
-    { name = "nps-senti-preprocess", editable = "packages/preprocess" },
-    { name = "nps-senti-topics", editable = "packages/topics" },
-    { name = "nps-senti-viz", editable = "packages/viz" },
-]
 
 [package.metadata.requires-dev]
 dev = [
@@ -78,77 +48,6 @@ dev = [
     { name = "pytest", specifier = ">=8.4.2" },
     { name = "ruff", specifier = ">=0.13.0" },
 ]
-
-[[package]]
-name = "nps-senti-analytics"
-version = "0.1.0"
-source = { editable = "packages/analytics" }
-dependencies = [
-    { name = "nps-senti-core" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "nps-senti-core", editable = "packages/core" }]
-
-[[package]]
-name = "nps-senti-core"
-version = "0.1.0"
-source = { editable = "packages/core" }
-
-[[package]]
-name = "nps-senti-crawl"
-version = "0.1.0"
-source = { editable = "packages/crawl" }
-dependencies = [
-    { name = "nps-senti-core" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "nps-senti-core", editable = "packages/core" }]
-
-[[package]]
-name = "nps-senti-ml"
-version = "0.1.0"
-source = { editable = "packages/ml" }
-dependencies = [
-    { name = "nps-senti-core" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "nps-senti-core", editable = "packages/core" }]
-
-[[package]]
-name = "nps-senti-preprocess"
-version = "0.1.0"
-source = { editable = "packages/preprocess" }
-dependencies = [
-    { name = "nps-senti-core" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "nps-senti-core", editable = "packages/core" }]
-
-[[package]]
-name = "nps-senti-topics"
-version = "0.1.0"
-source = { editable = "packages/topics" }
-dependencies = [
-    { name = "nps-senti-core" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "nps-senti-core", editable = "packages/core" }]
-
-[[package]]
-name = "nps-senti-viz"
-version = "0.1.0"
-source = { editable = "packages/viz" }
-dependencies = [
-    { name = "nps-senti-core" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "nps-senti-core", editable = "packages/core" }]
 
 [[package]]
 name = "packaging"
