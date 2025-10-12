@@ -1,21 +1,10 @@
 [project]
 name = "nps-senti"
 version = "0.1.0"
-description = "Add your description here"
+description = ""
 readme = "README.md"
-requires-python = ">=3.12"
-dependencies = [
-    "nps-senti-core",
-    "nps-senti-crawl",
-    "nps-senti-preprocess",
-    "nps-senti-ml",
-    "nps-senti-topics",
-    "nps-senti-analytics",
-    "nps-senti-viz",
-]
-
-[project.scripts]
-nps-senti = "nps_senti.cli:main"
+requires-python = ">=3.14"
+dependencies = []
 
 [dependency-groups]
 dev = [
@@ -23,25 +12,3 @@ dev = [
     "pytest>=8.4.2",
     "ruff>=0.13.0",
 ]
-
-[build-system]
-requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.build_meta"
-
-[tool.setuptools]
-package-dir = {"" = "apps/cli/src"}
-
-[tool.setuptools.packages.find]
-where = ["apps/cli/src"]
-
-[tool.uv.sources]
-"nps-senti-core" = { workspace = true }
-"nps-senti-crawl" = { workspace = true }
-"nps-senti-preprocess" = { workspace = true }
-"nps-senti-ml" = { workspace = true }
-"nps-senti-topics" = { workspace = true }
-"nps-senti-analytics" = { workspace = true }
-"nps-senti-viz" = { workspace = true }
-
-[tool.uv.workspace]
-members = ["packages/*"]
