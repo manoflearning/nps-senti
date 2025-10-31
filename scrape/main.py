@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 SCRAPER_MAP = {
     "dummy": dummy.DummyScraper,
     "naver-news": naver_news.NaverNewsScraper,
-    "youtube" : youtube.YoutubeScraper
+    "youtube": youtube.YoutubeScraper,
 }
 
 

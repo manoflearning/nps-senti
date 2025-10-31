@@ -17,7 +17,9 @@ class YoutubeScraper(BaseScraper):
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv("YOUTUBE_API_KEY")
         if not self.api_key:
-            raise RuntimeError("YOUTUBE_API_KEY not found in environment, and api_key argument is empty.")
+            raise RuntimeError(
+                "YOUTUBE_API_KEY not found in environment, and api_key argument is empty."
+            )
         self._video_channel_cache: dict[str, Optional[str]] = {}
         self._last_search_params: Optional[dict] = None
         self.exclude_uploader_comments: bool = True
@@ -36,18 +38,26 @@ class YoutubeScraper(BaseScraper):
 
     @staticmethod
     def _to_local_dt_from_rfc3339(ts: str, tz_name: str) -> dt.datetime:
-        utc = dt.datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(dt.timezone.utc)
+        utc = dt.datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(
+            dt.timezone.utc
+        )
         return utc.astimezone(ZoneInfo(tz_name))
 
-    def _build_request_params(self, keyword: str, start_date: dt.date, end_date: dt.date) -> dict:
+    def _build_request_params(
+        self, keyword: str, start_date: dt.date, end_date: dt.date
+    ) -> dict:
         return {
             "part": "snippet",
             "q": keyword,
             "type": "video",
             "order": "date",
             "maxResults": 50,
-            "publishedAfter": self._to_rfc3339_from_local(start_date, self.comment_tz, end=False),
-            "publishedBefore": self._to_rfc3339_from_local(end_date, self.comment_tz, end=True),
+            "publishedAfter": self._to_rfc3339_from_local(
+                start_date, self.comment_tz, end=False
+            ),
+            "publishedBefore": self._to_rfc3339_from_local(
+                end_date, self.comment_tz, end=True
+            ),
         }
 
     def _make_request(self, params: dict) -> requests.Response:
@@ -64,7 +74,7 @@ class YoutubeScraper(BaseScraper):
             return []
 
         video_ids: List[str] = []
-        for it in (data.get("items") or []):
+        for it in data.get("items") or []:
             vid = (it.get("id") or {}).get("videoId")
             if vid:
                 video_ids.append(vid)
@@ -80,7 +90,7 @@ class YoutubeScraper(BaseScraper):
             if not resp.ok:
                 break
             d2 = resp.json()
-            for it in (d2.get("items") or []):
+            for it in d2.get("items") or []:
                 vid = (it.get("id") or {}).get("videoId")
                 if vid:
                     video_ids.append(vid)
@@ -164,7 +174,9 @@ class YoutubeScraper(BaseScraper):
         use_date_filter = bool(comment_start_date and comment_end_date)
         if use_date_filter:
             tz = ZoneInfo(comment_tz)
-            start_local = dt.datetime.combine(comment_start_date, dt.time(0, 0, 0), tzinfo=tz)
+            start_local = dt.datetime.combine(
+                comment_start_date, dt.time(0, 0, 0), tzinfo=tz
+            )
             end_local_excl = dt.datetime.combine(
                 comment_end_date + dt.timedelta(days=1), dt.time(0, 0, 0), tzinfo=tz
             )
@@ -182,7 +194,9 @@ class YoutubeScraper(BaseScraper):
             ts = snippet.get("publishedAt")
             if not ts:
                 return ""
-            return self._to_local_dt_from_rfc3339(ts, comment_tz).strftime("%Y-%m-%d %H:%M:%S")
+            return self._to_local_dt_from_rfc3339(ts, comment_tz).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
 
         results: List[Dict] = []
         page_token = None
@@ -214,7 +228,10 @@ class YoutubeScraper(BaseScraper):
                             }
                         )
 
-                    if include_replies and item.get("snippet", {}).get("totalReplyCount", 0) > 0:
+                    if (
+                        include_replies
+                        and item.get("snippet", {}).get("totalReplyCount", 0) > 0
+                    ):
                         for r in (item.get("replies") or {}).get("comments", []) or []:
                             rs = r.get("snippet") or {}
                             if not _pass_date(rs):
