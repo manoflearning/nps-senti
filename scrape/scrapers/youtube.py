@@ -171,14 +171,18 @@ class YoutubeScraper(BaseScraper):
             author = (snippet.get("authorChannelId") or {}).get("value")
             return author == uploader_channel_id
 
-        use_date_filter = bool(comment_start_date and comment_end_date)
+        use_date_filter = (comment_start_date is not None) and (comment_end_date is not None)
+
+        tz = ZoneInfo(comment_tz)
+        start_local: dt.datetime = dt.datetime.min.replace(tzinfo=tz)
+        end_local_excl: dt.datetime = dt.datetime.max.replace(tzinfo=tz)
+
         if use_date_filter:
-            tz = ZoneInfo(comment_tz)
-            start_local = dt.datetime.combine(
-                comment_start_date, dt.time(0, 0, 0), tzinfo=tz
-            )
+            start_local = dt.datetime.combine(comment_start_date, dt.time(0, 0, 0), tzinfo=tz)  # type: ignore[reportArgumentType]
             end_local_excl = dt.datetime.combine(
-                comment_end_date + dt.timedelta(days=1), dt.time(0, 0, 0), tzinfo=tz
+                comment_end_date + dt.timedelta(days=1),
+                dt.time(0, 0, 0),
+                tzinfo=tz,
             )
 
         def _pass_date(snippet: dict) -> bool:
@@ -188,8 +192,8 @@ class YoutubeScraper(BaseScraper):
             if not ts:
                 return True
             local_dt = self._to_local_dt_from_rfc3339(ts, comment_tz)
-            return start_local <= local_dt < end_local_excl
-
+            return (start_local <= local_dt < end_local_excl)
+        
         def _fmt(snippet: dict) -> str:
             ts = snippet.get("publishedAt")
             if not ts:
