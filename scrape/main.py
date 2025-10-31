@@ -1,5 +1,5 @@
 import argparse
-from scrape.scrapers import dummy, naver_news
+from scrape.scrapers import dummy, naver_news, fmkorea, mlbpark
 import logging
 import datetime as dt
 from pathlib import Path
@@ -19,8 +19,9 @@ logger = logging.getLogger(__name__)
 SCRAPER_MAP = {
     "dummy": dummy.DummyScraper,
     "naver-news": naver_news.NaverNewsScraper,
+    "fmkorea": fmkorea.FmkoreaScraper,
+    "mlbpark": mlbpark.MlbparkScraper,
 }
-
 
 def date_type(s: str) -> dt.date:
     try:
