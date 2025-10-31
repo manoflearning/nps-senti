@@ -5,11 +5,11 @@ import requests
 import os
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
+
 load_dotenv()
 
 
 class YoutubeScraper(BaseScraper):
-
     SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
     COMMENTS_URL = "https://www.googleapis.com/youtube/v3/commentThreads"
     VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos"
@@ -18,10 +18,8 @@ class YoutubeScraper(BaseScraper):
         self.api_key = api_key or os.getenv("YOUTUBE_API_KEY")
         if not self.api_key:
             raise RuntimeError("YOUTUBE_API_KEY not found in environment, and api_key argument is empty.")
-
         self._video_channel_cache: dict[str, Optional[str]] = {}
         self._last_search_params: Optional[dict] = None
-
         self.exclude_uploader_comments: bool = True
         self.comment_tz: str = "Asia/Seoul"
 
@@ -38,12 +36,8 @@ class YoutubeScraper(BaseScraper):
 
     @staticmethod
     def _to_local_dt_from_rfc3339(ts: str, tz_name: str) -> dt.datetime:
-        """
-        '2025-10-03T23:49:24Z' -> aware local datetime (e.g., Asia/Seoul)
-        """
         utc = dt.datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(dt.timezone.utc)
         return utc.astimezone(ZoneInfo(tz_name))
-    
 
     def _build_request_params(self, keyword: str, start_date: dt.date, end_date: dt.date) -> dict:
         return {
@@ -112,7 +106,6 @@ class YoutubeScraper(BaseScraper):
             )
 
         return all_comments
-    
 
     def _get_video_channel_id(self, video_id: str) -> Optional[str]:
         if video_id in self._video_channel_cache:
@@ -149,7 +142,6 @@ class YoutubeScraper(BaseScraper):
         comment_end_date: Optional[dt.date] = None,
         comment_tz: str = "Asia/Seoul",
     ) -> List[Dict]:
-
         params = {
             "part": "snippet,replies" if include_replies else "snippet",
             "videoId": video_id,
@@ -184,7 +176,7 @@ class YoutubeScraper(BaseScraper):
             if not ts:
                 return True
             local_dt = self._to_local_dt_from_rfc3339(ts, comment_tz)
-            return (start_local <= local_dt < end_local_excl)
+            return start_local <= local_dt < end_local_excl
 
         def _fmt(snippet: dict) -> str:
             ts = snippet.get("publishedAt")
@@ -208,7 +200,6 @@ class YoutubeScraper(BaseScraper):
             for item in data.get("items", []):
                 top = (item.get("snippet") or {}).get("topLevelComment") or {}
                 top_sn = top.get("snippet") or {}
-                top_id = top.get("id") or item.get("id")
 
                 if not _pass_date(top_sn):
                     hard_stop = True
