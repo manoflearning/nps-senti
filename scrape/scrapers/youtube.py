@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, cast
 from scrape.base_scraper import BaseScraper
 import datetime as dt
 import requests
@@ -176,18 +176,20 @@ class YoutubeScraper(BaseScraper):
         )
 
         tz = ZoneInfo(comment_tz)
-        start_local: dt.datetime = dt.datetime.min.replace(tzinfo=tz)
-        end_local_excl: dt.datetime = dt.datetime.max.replace(tzinfo=tz)
+        start_local: dt.datetime
+        end_local_excl: dt.datetime
 
         if use_date_filter:
-            start_local = dt.datetime.combine(
-                comment_start_date, dt.time(0, 0, 0), tzinfo=tz
-            )  # type: ignore[reportArgumentType]
+            start_d = cast(dt.date, comment_start_date)
+            end_d = cast(dt.date, comment_end_date)
+
+            start_local = dt.datetime.combine(start_d, dt.time(0, 0, 0), tzinfo=tz)
             end_local_excl = dt.datetime.combine(
-                comment_end_date + dt.timedelta(days=1),
-                dt.time(0, 0, 0),
-                tzinfo=tz,
+                end_d + dt.timedelta(days=1), dt.time(0, 0, 0), tzinfo=tz
             )
+        else:
+            start_local = dt.datetime.min.replace(tzinfo=tz)
+            end_local_excl = dt.datetime.max.replace(tzinfo=tz)
 
         def _pass_date(snippet: dict) -> bool:
             if not use_date_filter:
