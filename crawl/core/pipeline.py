@@ -12,10 +12,9 @@ from urllib3.util.retry import Retry
 
 from .config import CrawlerConfig, load_config
 from .dedupe.simhash_dedupe import SimhashDeduper
-from .discovery.commoncrawl import CommonCrawlConfig, CommonCrawlDiscoverer
 from .discovery.gdelt import GdeltConfig, GdeltDiscoverer
 from .discovery.youtube import YouTubeDiscoverer
-from .discovery.forums import ForumsDiscoverer, ForumSiteConfig
+from .discovery.forums import ForumsDiscoverer
 from .extract.extractor import Extractor
 from .fetch.fetcher import Fetcher
 from .models import Candidate, Document
@@ -39,15 +38,16 @@ class PipelineStats:
     extraction_failed: int
 
 
-class PlanAPipeline:
+class UnifiedPipeline:
     def __init__(self, config: CrawlerConfig) -> None:
         self.config = config
         self.session = requests.Session()
         retry = Retry(
             total=3,
             backoff_factor=0.5,
-            status_forcelist=(500, 502, 503, 504),
+            status_forcelist=(429, 500, 502, 503, 504),
             allowed_methods=("GET", "HEAD"),
+            respect_retry_after_header=True,
         )
         adapter = HTTPAdapter(max_retries=retry)
         self.session.mount("https://", adapter)
@@ -65,11 +65,10 @@ class PlanAPipeline:
         self.deduper = SimhashDeduper()
         self.storage = JsonlWriter(
             config.output.root,
-            config.crawl.plan,
-            config.crawl.run_id,
+            config.runtime.run_id,
             file_name=config.output.file_name,
         )
-        self.index = DocumentIndex(config.output.root, config.crawl.plan)
+        self.index = DocumentIndex(self.storage.output_dir)
 
     def _trim_candidates(self, candidates: List[Candidate]) -> List[Candidate]:
         max_total = self.config.limits.max_candidates_per_source
@@ -79,23 +78,6 @@ class PlanAPipeline:
 
     def discover(self) -> Dict[str, List[Candidate]]:
         discoveries: Dict[str, List[Candidate]] = {}
-        cc = CommonCrawlDiscoverer(
-            session=self.session,
-            domains=self.config.allow_domains,
-            keywords=self.config.keywords,
-            request_timeout=self.config.limits.request_timeout_sec,
-            config=CommonCrawlConfig(
-                max_indexes=max(1, self.config.commoncrawl.max_indexes),
-                per_domain_limit=max(
-                    5,
-                    min(
-                        self.config.commoncrawl.per_domain_limit,
-                        self.config.limits.max_candidates_per_source,
-                    ),
-                ),
-                pause_between_requests=max(0.2, self.config.commoncrawl.pause_between_requests),
-            ),
-        )
         gdelt = GdeltDiscoverer(
             session=self.session,
             keywords=self.config.keywords,
@@ -116,7 +98,7 @@ class PlanAPipeline:
             end_date=self.config.time_window.end_date,
         )
 
-        # Forums discoverer (multiple sites)
+        # Forums discoverer
         forum_sites = self.config.forums.sites if hasattr(self.config, "forums") else {}
         forums = ForumsDiscoverer(
             session=self.session,
@@ -125,18 +107,15 @@ class PlanAPipeline:
             sites_config=forum_sites,
         )
 
-        discoveries["commoncrawl"] = self._trim_candidates(cc.discover())
         discoveries["gdelt"] = self._trim_candidates(gdelt.discover())
         discoveries["youtube"] = self._trim_candidates(yt.discover())
-
-        # Merge per-site forum results into discoveries (keyed by site)
         forum_results = forums.discover()
         for site, cands in forum_results.items():
             discoveries[site] = self._trim_candidates(cands)
         return discoveries
 
     def run(self) -> PipelineStats:
-        logger.info("Starting Plan A pipeline: run_id=%s", self.config.crawl.run_id)
+        logger.info("Starting unified pipeline: run_id=%s", self.config.runtime.run_id)
         discovered = self.discover()
 
         unique_candidates: Dict[str, Candidate] = {}
@@ -154,8 +133,8 @@ class PlanAPipeline:
                 if norm not in unique_candidates:
                     unique_candidates[norm] = candidate
 
-        # prioritize forums and gdelt first (fresh), then commoncrawl snapshots
-        ordered_sources = ["dcinside", "bobaedream", "fmkorea", "mlbpark", "theqoo", "ppomppu", "gdelt", "commoncrawl", "youtube"]
+        # prioritize forums and gdelt first, youtube last (meta only)
+        ordered_sources = ["dcinside", "bobaedream", "fmkorea", "mlbpark", "theqoo", "ppomppu", "gdelt", "youtube"]
         all_candidates: List[Candidate] = []
         for source in ordered_sources:
             for candidate in unique_candidates.values():
@@ -188,8 +167,7 @@ class PlanAPipeline:
             document, quality_info = self.extractor.build_document(
                 candidate,
                 fetch_result,
-                run_id=self.config.crawl.run_id,
-                plan=self.config.crawl.plan,
+                run_id=self.config.runtime.run_id,
             )
             if not document:
                 if quality_info and quality_info.get("status") == "quality-reject":
@@ -237,5 +215,5 @@ class PlanAPipeline:
 
 def run_pipeline() -> PipelineStats:
     config = load_config()
-    pipeline = PlanAPipeline(config)
+    pipeline = UnifiedPipeline(config)
     return pipeline.run()

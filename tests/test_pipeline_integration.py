@@ -1,9 +1,9 @@
 from pathlib import Path
 from datetime import datetime
 
-from crawl.plan_a.pipeline import PlanAPipeline
-from crawl.plan_a.config import load_config, OutputConfig
-from crawl.plan_a.models import Candidate, FetchResult
+from crawl.core.pipeline import UnifiedPipeline
+from crawl.core.config import load_config, OutputConfig
+from crawl.core.models import Candidate, FetchResult
 
 
 def test_pipeline_runs_with_forum_candidates(tmp_path, monkeypatch):
@@ -18,7 +18,7 @@ def test_pipeline_runs_with_forum_candidates(tmp_path, monkeypatch):
     config.quality.min_keyword_coverage = 0.0
     config.quality.min_score = 0.0
 
-    pipeline = PlanAPipeline(config)
+    pipeline = UnifiedPipeline(config)
 
     # Stub discover to return 2 forum candidates
     c1 = Candidate(
@@ -57,5 +57,5 @@ def test_pipeline_runs_with_forum_candidates(tmp_path, monkeypatch):
     stats = pipeline.run()
     assert stats.stored >= 1
     # Output file exists
-    out = Path(tmp_path) / f"plan_{config.crawl.plan}" / f"{config.output.file_name}.jsonl"
+    out = Path(tmp_path) / f"{config.output.file_name}.jsonl"
     assert out.exists() and out.stat().st_size > 0

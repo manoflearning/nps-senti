@@ -131,7 +131,6 @@ class Extractor:
         candidate: Candidate,
         fetch_result: FetchResult,
         run_id: str,
-        plan: str,
     ) -> tuple[Optional[Document], Optional[Dict[str, object]]]:
         extraction = self._run_trafilatura(fetch_result.html or "", candidate.url)
         if not extraction or not extraction.text:
@@ -183,7 +182,6 @@ class Extractor:
             quality=quality,
             dup={"simhash": None, "group": None},
             crawl={
-                "plan": plan,
                 "run_id": run_id,
                 "fetched_at": fetch_result.fetched_at.isoformat() + "Z",
                 "fetched_from": fetch_result.fetched_from,

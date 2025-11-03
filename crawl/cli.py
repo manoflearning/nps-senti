@@ -6,12 +6,12 @@ import logging
 from dataclasses import asdict
 from pathlib import Path
 
-from .config import CrawlerConfig, load_config
-from .pipeline import PlanAPipeline
+from .core.config import CrawlerConfig, load_config
+from .core.pipeline import UnifiedPipeline
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Plan A crawler pipeline runner.")
+    parser = argparse.ArgumentParser(description="Unified crawler pipeline runner.")
     parser.add_argument(
         "--params",
         type=Path,
@@ -48,7 +48,7 @@ def main(argv: list[str] | None = None) -> int:
     config = load_config(params_path=args.params) if args.params else load_config()
     apply_overrides(config, args)
 
-    pipeline = PlanAPipeline(config)
+    pipeline = UnifiedPipeline(config)
     stats = pipeline.run()
     print(json.dumps(asdict(stats), ensure_ascii=False, indent=2))
     return 0
@@ -56,3 +56,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

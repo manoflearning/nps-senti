@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from time import sleep
 from typing import Iterable, List, Optional, Set
 
 import requests
@@ -17,6 +18,9 @@ class GdeltConfig:
     max_records_per_keyword: int = 75
     chunk_days: int = 30
     overlap_days: int = 0
+    pause_between_requests: float = 1.0
+    max_attempts: int = 3
+    rate_limit_backoff_sec: float = 5.0
 
 
 class GdeltDiscoverer:
@@ -43,6 +47,12 @@ class GdeltDiscoverer:
             self.config.chunk_days = 30
         if self.config.max_records_per_keyword <= 0:
             self.config.max_records_per_keyword = 75
+        if self.config.pause_between_requests < 0:
+            self.config.pause_between_requests = 0.0
+        if self.config.max_attempts <= 0:
+            self.config.max_attempts = 1
+        if self.config.rate_limit_backoff_sec < 0:
+            self.config.rate_limit_backoff_sec = 0.0
 
     def _iter_windows(self) -> Iterable[tuple[datetime, datetime]]:
         start = self.start_date
@@ -104,21 +114,53 @@ class GdeltDiscoverer:
                 continue
             for window_start, window_end in self._iter_windows():
                 params = self._build_params(keyword, window_start, window_end)
-                try:
-                    response = self.session.get(
-                        self.API_URL,
-                        params=params,
-                        timeout=self.request_timeout,
-                    )
-                    response.raise_for_status()
-                except requests.RequestException as exc:
-                    logger.warning(
-                        "GDELT request failed: keyword=%s window=%s-%s error=%s",
-                        keyword,
-                        window_start.date(),
-                        window_end.date(),
-                        exc,
-                    )
+                attempt = 0
+                response = None
+                while attempt < self.config.max_attempts:
+                    try:
+                        response = self.session.get(
+                            self.API_URL,
+                            params=params,
+                            timeout=self.request_timeout,
+                        )
+                        if response.status_code == 429:
+                            # Respect Retry-After if present; otherwise exponential backoff
+                            retry_after = response.headers.get("Retry-After")
+                            wait = None
+                            if retry_after:
+                                try:
+                                    wait = float(retry_after)
+                                except ValueError:
+                                    wait = None
+                            if wait is None:
+                                wait = self.config.rate_limit_backoff_sec * (2 ** attempt)
+                            logger.info(
+                                "GDELT rate limited (429). Sleeping %.1fs (attempt %d)",
+                                wait,
+                                attempt + 1,
+                            )
+                            sleep(wait)
+                            attempt += 1
+                            continue
+                        response.raise_for_status()
+                        break
+                    except requests.RequestException as exc:
+                        attempt += 1
+                        logger.warning(
+                            "GDELT request failed: keyword=%s window=%s-%s attempt=%d error=%s",
+                            keyword,
+                            window_start.date(),
+                            window_end.date(),
+                            attempt,
+                            exc,
+                        )
+                        if attempt < self.config.max_attempts:
+                            sleep(self.config.rate_limit_backoff_sec * attempt)
+                        else:
+                            response = None
+                            break
+                if response is None:
+                    # give up for this window/keyword
                     continue
                 try:
                     payload = response.json()
@@ -163,5 +205,8 @@ class GdeltDiscoverer:
                             extra={"gdelt": article},
                         )
                     )
+                # Courtesy pause to respect rate limits
+                if self.config.pause_between_requests:
+                    sleep(self.config.pause_between_requests)
         logger.info("GDELT discovered %d candidates", len(candidates))
         return candidates

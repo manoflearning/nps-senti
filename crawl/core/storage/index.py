@@ -6,8 +6,9 @@ from typing import Set
 
 
 class DocumentIndex:
-    def __init__(self, output_root: Path, plan: str) -> None:
-        self.path = output_root / f"plan_{plan.lower()}" / "_index.json"
+    def __init__(self, output_dir: Path) -> None:
+        # Unified index lives alongside output JSONL
+        self.path = output_dir / "_index.json"
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.ids: Set[str] = set()
         if self.path.exists():

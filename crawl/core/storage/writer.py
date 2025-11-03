@@ -10,14 +10,12 @@ class JsonlWriter:
     def __init__(
         self,
         output_root: Path,
-        plan: str,
         run_id: str,
         file_name: str | None = None,
     ) -> None:
         self.output_root = output_root
-        self.plan = plan
         self.run_id = run_id
-        self.output_dir = output_root / f"plan_{plan.lower()}"
+        self.output_dir = output_root
         self.output_dir.mkdir(parents=True, exist_ok=True)
         if file_name:
             if not file_name.endswith(".jsonl"):

@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from crawl.plan_a.discovery.forums import ForumsDiscoverer, ForumSiteConfig
+from crawl.core.discovery.forums import ForumsDiscoverer, ForumSiteConfig
 
 
 class DummyResp:

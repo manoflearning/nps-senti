@@ -1,10 +1,10 @@
 import os
 from datetime import datetime
 
-from crawl.plan_a.extract.extractor import Extractor
-from crawl.plan_a.models import Candidate
-from crawl.plan_a.config import QualityConfig
-from crawl.plan_a.models import FetchResult
+from crawl.core.extract.extractor import Extractor
+from crawl.core.models import Candidate
+from crawl.core.config import QualityConfig
+from crawl.core.models import FetchResult
 
 
 def test_youtube_augmentation_without_api_key(monkeypatch):
@@ -40,8 +40,7 @@ def test_youtube_augmentation_without_api_key(monkeypatch):
         fetched_at=datetime.utcnow(),
     )
 
-    doc, quality = extractor.build_document(candidate, fetch_result, run_id="test", plan="a")
+    doc, quality = extractor.build_document(candidate, fetch_result, run_id="test")
     assert doc is not None
     assert "국민연금" in doc.text
     assert doc.title == "영상 제목"
-

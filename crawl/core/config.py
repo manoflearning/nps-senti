@@ -36,8 +36,7 @@ class QualityConfig:
 
 
 @dataclass(slots=True)
-class CrawlParams:
-    plan: str
+class RuntimeParams:
     run_id: str
 
 
@@ -46,6 +45,9 @@ class GdeltSourceConfig:
     max_records_per_keyword: int
     chunk_days: int
     overlap_days: int
+    pause_between_requests: float = 1.0
+    max_attempts: int = 3
+    rate_limit_backoff_sec: float = 5.0
 
 
 @dataclass(slots=True)
@@ -76,15 +78,16 @@ class CrawlerConfig:
     lang: List[str]
     time_window: TimeWindow
     output: OutputConfig
-    crawl: CrawlParams
+    runtime: RuntimeParams
     limits: CrawlLimits
     quality: QualityConfig
     gdelt: GdeltSourceConfig
-    commoncrawl: CommonCrawlSourceConfig
     forums: ForumsSourceConfig = field(default_factory=ForumsSourceConfig)
 
 
 def _load_keywords(path: Path) -> List[str]:
+    if not path.exists():
+        return []
     keywords: List[str] = []
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
@@ -106,11 +109,11 @@ def _load_allow_domains(path: Path) -> List[str]:
     return domains
 
 
-def _ensure_run_id(run_id: Optional[str], plan: str) -> str:
+def _ensure_run_id(run_id: Optional[str]) -> str:
     if run_id:
         return run_id
     now = datetime.now(timezone.utc)
-    return now.strftime("%Y%m%d-%H%M%S") + f"-plan-{plan.lower()}"
+    return now.strftime("%Y%m%d-%H%M%S")
 
 
 def _parse_datetime(value: Optional[str]) -> Optional[datetime]:
@@ -139,7 +142,12 @@ def load_config(
     keywords_file = config_dir / "keywords.txt"
     allow_domains_file = config_dir / "domains_allowlist.txt"
 
-    keywords = _load_keywords(keywords_file)
+    # Prefer inline YAML list if provided; otherwise fallback to file
+    keywords_param = params.get("keywords")
+    if isinstance(keywords_param, (list, tuple)) and keywords_param:
+        keywords = [str(k).strip() for k in keywords_param if str(k).strip()]
+    else:
+        keywords = _load_keywords(keywords_file)
     # Prefer inline YAML list if provided; otherwise fallback to file
     allow_domains_param = params.get("allow_domains")
     if isinstance(allow_domains_param, (list, tuple)) and allow_domains_param:
@@ -161,8 +169,7 @@ def load_config(
     output_file_name = output_cfg.get("file_name")
 
     crawl_cfg = params.get("crawl", {})
-    plan = crawl_cfg.get("plan", "a").lower()
-    run_id = _ensure_run_id(crawl_cfg.get("run_id"), plan)
+    run_id = _ensure_run_id(crawl_cfg.get("run_id"))
 
     limits_cfg = params.get("limits", {})
     limits = CrawlLimits(
@@ -181,19 +188,15 @@ def load_config(
 
     sources_cfg = params.get("sources", {})
     gdelt_cfg = sources_cfg.get("gdelt", {})
-    commoncrawl_cfg = sources_cfg.get("commoncrawl", {})
     forums_cfg = sources_cfg.get("forums", {})
 
     gdelt = GdeltSourceConfig(
         max_records_per_keyword=int(gdelt_cfg.get("max_records_per_keyword", 100)),
         chunk_days=int(gdelt_cfg.get("chunk_days", 30)),
         overlap_days=int(gdelt_cfg.get("overlap_days", 0)),
-    )
-
-    commoncrawl = CommonCrawlSourceConfig(
-        max_indexes=int(commoncrawl_cfg.get("max_indexes", 6)),
-        per_domain_limit=int(commoncrawl_cfg.get("per_domain_limit", 80)),
-        pause_between_requests=float(commoncrawl_cfg.get("pause_between_requests", 1.0)),
+        pause_between_requests=float(gdelt_cfg.get("pause_between_requests", 1.0)),
+        max_attempts=int(gdelt_cfg.get("max_attempts", 3)),
+        rate_limit_backoff_sec=float(gdelt_cfg.get("rate_limit_backoff_sec", 5.0)),
     )
 
     # Forums: dynamically map unknown site keys into ForumSiteConfig instances
@@ -217,10 +220,9 @@ def load_config(
         lang=lang_list,
         time_window=TimeWindow(start_date=start_date, end_date=end_date),
         output=OutputConfig(root=output_root, file_name=output_file_name),
-        crawl=CrawlParams(plan=plan, run_id=run_id),
+        runtime=RuntimeParams(run_id=run_id),
         limits=limits,
         quality=quality,
         gdelt=gdelt,
-        commoncrawl=commoncrawl,
         forums=forums,
     )
