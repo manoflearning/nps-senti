@@ -40,8 +40,21 @@ class PipelineStats:
 
 
 class UnifiedPipeline:
-    def __init__(self, config: CrawlerConfig) -> None:
+    def __init__(
+        self,
+        config: CrawlerConfig,
+        include_sources: set[str] | None = None,
+        forum_sites_filter: set[str] | None = None,
+        max_fetch: int | None = None,
+    ) -> None:
         self.config = config
+        # Optional limiter to run only selected sources
+        # Accepted values: {"gdelt", "youtube", "forums"}
+        self.include_sources = include_sources
+        # Optional: within forums, include only specific site keys
+        self.forum_sites_filter = forum_sites_filter
+        # Optional cap on number of fetch attempts in this run
+        self.max_fetch = max_fetch if (max_fetch is None or max_fetch > 0) else None
         self.session = requests.Session()
         retry = Retry(
             total=3,
@@ -75,9 +88,14 @@ class UnifiedPipeline:
 
     def discover(self) -> Dict[str, List[Candidate]]:
         discoveries: Dict[str, List[Candidate]] = {}
+
+        # Helper to check if a logical source should run
+        def _should_run(key: str) -> bool:
+            return not self.include_sources or key in self.include_sources
+
         # GDELT discoverer (can be disabled via config)
         gdelt_candidates: List[Candidate] = []
-        if getattr(self.config.gdelt, "enabled", True):
+        if _should_run("gdelt") and getattr(self.config.gdelt, "enabled", True):
             gdelt = GdeltDiscoverer(
                 session=self.session,
                 keywords=self.config.keywords,
@@ -97,27 +115,39 @@ class UnifiedPipeline:
                 ),
             )
             gdelt_candidates = gdelt.discover()
-        yt = YouTubeDiscoverer(
-            api_key=os.environ.get("YOUTUBE_API_KEY"),
-            keywords=self.config.keywords,
-            start_date=self.config.time_window.start_date,
-            end_date=self.config.time_window.end_date,
-        )
+        yt = None
+        if _should_run("youtube"):
+            yt = YouTubeDiscoverer(
+                api_key=os.environ.get("YOUTUBE_API_KEY"),
+                keywords=self.config.keywords,
+                start_date=self.config.time_window.start_date,
+                end_date=self.config.time_window.end_date,
+            )
 
         # Forums discoverer
         forum_sites = self.config.forums.sites if hasattr(self.config, "forums") else {}
-        forums = ForumsDiscoverer(
-            session=self.session,
-            request_timeout=self.config.limits.request_timeout_sec,
-            user_agent=self.fetcher.config.user_agent,
-            sites_config=forum_sites,
-        )
+        # Apply forum sites filter if provided
+        if self.forum_sites_filter:
+            forum_sites = {
+                k: v for k, v in forum_sites.items() if k in self.forum_sites_filter
+            }
+        forums = None
+        if _should_run("forums"):
+            forums = ForumsDiscoverer(
+                session=self.session,
+                request_timeout=self.config.limits.request_timeout_sec,
+                user_agent=self.fetcher.config.user_agent,
+                sites_config=forum_sites,
+            )
 
-        discoveries["gdelt"] = self._trim_candidates(gdelt_candidates)
-        discoveries["youtube"] = self._trim_candidates(yt.discover())
-        forum_results = forums.discover()
-        for site, cands in forum_results.items():
-            discoveries[site] = self._trim_candidates(cands)
+        if _should_run("gdelt"):
+            discoveries["gdelt"] = self._trim_candidates(gdelt_candidates)
+        if yt is not None:
+            discoveries["youtube"] = self._trim_candidates(yt.discover())
+        if forums is not None:
+            forum_results = forums.discover()
+            for site, cands in forum_results.items():
+                discoveries[site] = self._trim_candidates(cands)
         return discoveries
 
     def run(self) -> PipelineStats:
@@ -169,11 +199,15 @@ class UnifiedPipeline:
         # dedupe removed
         extraction_failed = 0
 
+        attempted = 0
         for candidate in tqdm(
             all_candidates,
             desc="Fetching",
             unit="doc",
         ):
+            if self.max_fetch is not None and attempted >= self.max_fetch:
+                break
+            attempted += 1
             fetch_result = self.fetcher.fetch(candidate)
             if not fetch_result or not fetch_result.html:
                 failed_fetch += 1
