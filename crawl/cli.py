@@ -23,11 +23,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Disable GDELT discovery for this run.",
     )
     parser.add_argument(
-        "--max-fetch",
-        type=int,
-        help="Override max_fetch_per_run for this invocation.",
-    )
-    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -37,12 +32,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def apply_overrides(config: CrawlerConfig, args: argparse.Namespace) -> None:
-    if args.max_fetch is not None and args.max_fetch > 0:
-        config.limits = type(config.limits)(
-            max_candidates_per_source=config.limits.max_candidates_per_source,
-            max_fetch_per_run=args.max_fetch,
-            request_timeout_sec=config.limits.request_timeout_sec,
-        )
     if getattr(args, "no_gdelt", False):
         # Respect missing attr for older callers
         if hasattr(config, "gdelt") and hasattr(config.gdelt, "enabled"):

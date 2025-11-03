@@ -23,14 +23,11 @@ class OutputConfig:
 @dataclass(slots=True)
 class CrawlLimits:
     max_candidates_per_source: int
-    max_fetch_per_run: int
     request_timeout_sec: int
 
 
 @dataclass(slots=True)
 class QualityConfig:
-    min_score: float
-    min_keyword_coverage: float
     min_keyword_hits: int
 
 
@@ -178,14 +175,11 @@ def load_config(
     limits_cfg = params.get("limits", {})
     limits = CrawlLimits(
         max_candidates_per_source=int(limits_cfg.get("max_candidates_per_source", 500)),
-        max_fetch_per_run=int(limits_cfg.get("max_fetch_per_run", 200)),
         request_timeout_sec=int(limits_cfg.get("request_timeout_sec", 30)),
     )
 
     quality_cfg = params.get("quality", {})
     quality = QualityConfig(
-        min_score=float(quality_cfg.get("min_score", 0.3)),
-        min_keyword_coverage=float(quality_cfg.get("min_keyword_coverage", 0.05)),
         min_keyword_hits=int(quality_cfg.get("min_keyword_hits", 1)),
     )
 

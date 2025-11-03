@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Dict, List, cast
 
 import requests
+from dotenv import load_dotenv
 from requests.adapters import HTTPAdapter
 from tqdm import tqdm
 from urllib3.util.retry import Retry
@@ -20,6 +21,8 @@ from .models import Candidate
 from .storage.index import DocumentIndex
 from .storage.writer import MultiSourceJsonlWriter
 from .utils import normalize_url
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +170,7 @@ class UnifiedPipeline:
         extraction_failed = 0
 
         for candidate in tqdm(
-            all_candidates[: self.config.limits.max_fetch_per_run],
+            all_candidates,
             desc="Fetching",
             unit="doc",
         ):

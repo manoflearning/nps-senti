@@ -110,11 +110,6 @@ class Extractor:
             score += 0.2
         else:
             reasons.append("keyword_hits")
-        if coverage < self.quality_config.min_keyword_coverage:
-            reasons.append("coverage")
-
-        if score < self.quality_config.min_score:
-            reasons.append("low-score")
 
         return {
             "score": round(score, 3),
@@ -154,21 +149,6 @@ class Extractor:
                 "status": "quality-reject",
                 "quality": quality,
                 "reason": "keyword_hits",
-            }
-        if (
-            cast(float, quality["keyword_coverage"])
-            < self.quality_config.min_keyword_coverage
-        ):
-            return None, {
-                "status": "quality-reject",
-                "quality": quality,
-                "reason": "coverage",
-            }
-        if cast(float, quality["score"]) < self.quality_config.min_score:
-            return None, {
-                "status": "quality-reject",
-                "quality": quality,
-                "reason": "score",
             }
 
         url_norm = normalize_url(candidate.url)

@@ -14,8 +14,6 @@ def test_youtube_augmentation_without_api_key(monkeypatch):
         keywords=["국민연금"],
         allowed_languages=["ko"],
         quality_config=QualityConfig(
-            min_score=0.0,
-            min_keyword_coverage=0.0,
             min_keyword_hits=0,
         ),
     )

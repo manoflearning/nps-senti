@@ -17,10 +17,6 @@ keywords:
   - "National Pension Service"
   - "NPS Korea"
   - "Korea National Pension"
-  - "pension reform"
-  - "pension fund"
-  - "retirement pension"
-  - "fund management"
   - "NPS"
   - "국민 연금"
   - "국 민 연 금"
@@ -49,12 +45,8 @@ crawl:
   run_id: null
 limits:
   max_candidates_per_source: 500
-  max_fetch_per_run: 200
   request_timeout_sec: 30
 quality:
-  # Recall-tuned: no min length threshold; rely on language + keyword
-  min_score: 0.3
-  min_keyword_coverage: 0.0
   min_keyword_hits: 1
 sources:
   gdelt:
