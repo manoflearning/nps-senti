@@ -1,5 +1,5 @@
 import argparse
-from scrape.scrapers import dummy, naver_news
+from scrape.scrapers import dummy, naver_news, youtube
 import logging
 import datetime as dt
 from pathlib import Path
@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 SCRAPER_MAP = {
     "dummy": dummy.DummyScraper,
     "naver-news": naver_news.NaverNewsScraper,
+    "youtube": youtube.YoutubeScraper,
 }
 
 
