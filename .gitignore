@@ -17,3 +17,4 @@ wheels/
 data_raw/
 
 .DS_Store
+**/.DS_Store
