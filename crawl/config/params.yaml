@@ -1,0 +1,73 @@
+time_window:
+  start_date: "2025-01-01T00:00:00Z"
+  end_date: null
+lang: ["ko", "en"]
+output:
+  root: "data_crawl"
+  file_name: "plan_a"
+crawl:
+  plan: "a"
+  run_id: null
+limits:
+  max_candidates_per_source: 500
+  max_fetch_per_run: 200
+  request_timeout_sec: 30
+quality:
+  min_score: 0.8
+  min_keyword_coverage: 0.0
+  min_characters: 800
+  min_keyword_hits: 1
+sources:
+  gdelt:
+    max_records_per_keyword: 90
+    chunk_days: 30
+    overlap_days: 2
+  commoncrawl:
+    max_indexes: 9
+    per_domain_limit: 80
+    pause_between_requests: 1.0
+  forums:
+    dcinside:
+      enabled: true
+      boards:
+        - "https://gall.dcinside.com/mgallery/board/lists/?id=pension"
+      max_pages: 2
+      per_board_limit: 120
+      pause_between_requests: 0.6
+    bobaedream:
+      enabled: true
+      boards:
+        - "https://www.bobaedream.co.kr/list?code=freeb"
+      max_pages: 2
+      per_board_limit: 120
+      pause_between_requests: 0.6
+    fmkorea:
+      enabled: true
+      boards:
+        - "https://www.fmkorea.com/football_k"
+        - "https://www.fmkorea.com/index.php?mid=best"
+      max_pages: 2
+      per_board_limit: 120
+      pause_between_requests: 0.6
+    mlbpark:
+      enabled: true
+      boards:
+        - "https://mlbpark.donga.com/mp/b.php?b=bullpen"
+      max_pages: 2
+      per_board_limit: 120
+      pause_between_requests: 0.6
+    theqoo:
+      enabled: true
+      boards:
+        - "https://theqoo.net/square"
+      max_pages: 2
+      per_board_limit: 120
+      pause_between_requests: 0.6
+    ppomppu:
+      enabled: true
+      boards:
+        - "https://www.ppomppu.co.kr/zboard/zboard.php?id=freeboard"
+        - "https://www.ppomppu.co.kr/zboard/zboard.php?id=news"
+      max_pages: 2
+      per_board_limit: 120
+      pause_between_requests: 0.6

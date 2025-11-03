@@ -15,6 +15,7 @@ wheels/
 .env
 
 data_raw/
+data_crawl/
 
 .DS_Store
 **/.DS_Store
