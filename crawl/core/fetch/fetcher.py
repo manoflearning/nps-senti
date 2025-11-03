@@ -35,12 +35,15 @@ class RobotsCache:
         self.timeout = timeout
         self.user_agent = user_agent
         self.cache: dict[str, RobotFileParser] = {}
+        self._allow_all_hosts: set[str] = set()
 
     def allowed(self, url: str) -> bool:
         parsed = urlparse(url)
         if not parsed.scheme or not parsed.netloc:
             return False
         base = f"{parsed.scheme}://{parsed.netloc}"
+        if base in self._allow_all_hosts:
+            return True
         parser = self.cache.get(base)
         if parser is None:
             parser = RobotFileParser()
@@ -52,14 +55,17 @@ class RobotsCache:
                     timeout=self.timeout,
                 )
                 if response.status_code >= 400:
+                    # Treat as allow-all if robots not available
                     parser.parse([])
-                    parser.allow_all = True
+                    self._allow_all_hosts.add(base)
                 else:
                     parser.parse(response.text.splitlines())
             except requests.RequestException:
                 parser.parse([])
-                parser.allow_all = True
+                self._allow_all_hosts.add(base)
             self.cache[base] = parser
+        if base in self._allow_all_hosts:
+            return True
         return parser.can_fetch(self.user_agent, url)
 
 

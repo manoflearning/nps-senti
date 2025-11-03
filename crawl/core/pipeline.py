@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict, List, cast
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -11,7 +11,6 @@ from tqdm import tqdm
 from urllib3.util.retry import Retry
 
 from .config import CrawlerConfig, load_config
-from .dedupe.simhash_dedupe import SimhashDeduper
 from .discovery.gdelt import GdeltConfig, GdeltDiscoverer
 from .discovery.youtube import YouTubeDiscoverer
 from .discovery.forums import ForumsDiscoverer
@@ -34,7 +33,6 @@ class PipelineStats:
     failed_fetch: int
     quality_rejected: int
     index_duplicates: int
-    dedupe_duplicates: int
     extraction_failed: int
 
 
@@ -62,7 +60,7 @@ class UnifiedPipeline:
             config.lang,
             config.quality,
         )
-        self.deduper = SimhashDeduper()
+        # Similarity-based dedupe disabled: keep near-duplicate posts
         self.storage = JsonlWriter(
             config.output.root,
             config.runtime.run_id,
@@ -92,6 +90,11 @@ class UnifiedPipeline:
                     max_records_per_keyword=self.config.gdelt.max_records_per_keyword,
                     chunk_days=self.config.gdelt.chunk_days,
                     overlap_days=self.config.gdelt.overlap_days,
+                    pause_between_requests=self.config.gdelt.pause_between_requests,
+                    max_attempts=self.config.gdelt.max_attempts,
+                    rate_limit_backoff_sec=self.config.gdelt.rate_limit_backoff_sec,
+                    max_concurrency=self.config.gdelt.max_concurrency,
+                    max_days_back=self.config.gdelt.max_days_back,
                 ),
             )
             gdelt_candidates = gdelt.discover()
@@ -164,7 +167,7 @@ class UnifiedPipeline:
         failed_fetch = 0
         quality_rejected = 0
         index_duplicates = 0
-        dedupe_duplicates = 0
+        # dedupe removed
         extraction_failed = 0
 
         for candidate in tqdm(
@@ -190,24 +193,25 @@ class UnifiedPipeline:
                 continue
             if document.extra is None:
                 document.extra = {}
-            document.extra.setdefault("fetch", {})
-            document.extra["fetch"].update(
+            fetch_meta = cast(dict, document.extra.setdefault("fetch", {}))
+            fetch_meta.update(
                 {
                     "encoding": fetch_result.encoding,
                     "status_code": fetch_result.status_code,
                     "fetched_from": fetch_result.fetched_from,
                 }
             )
-            if self.index.contains(document.id):
+            # Skip if we've already stored this exact URL before (regardless of content changes)
+            if self.index.contains(document.id) or self.index.contains_url(
+                document.url
+            ):
                 duplicates += 1
                 index_duplicates += 1
                 continue
-            if self.deduper.add(document):
-                duplicates += 1
-                dedupe_duplicates += 1
-                continue
+            # Keep similar posts; only index-based exact duplicates are filtered
             self.storage.append(document)
             self.index.add(document.id)
+            self.index.add_url(document.url)
             stored += 1
 
         stats = PipelineStats(
@@ -218,7 +222,6 @@ class UnifiedPipeline:
             failed_fetch=failed_fetch,
             quality_rejected=quality_rejected,
             index_duplicates=index_duplicates,
-            dedupe_duplicates=dedupe_duplicates,
             extraction_failed=extraction_failed,
         )
         logger.info("Pipeline completed stats=%s", stats)

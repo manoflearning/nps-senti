@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 
 @dataclass(slots=True)
@@ -13,7 +13,7 @@ class Candidate:
     snapshot_url: Optional[str] = None
     timestamp: Optional[datetime] = None
     title: Optional[str] = None
-    extra: Dict[str, object] = field(default_factory=dict)
+    extra: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -38,8 +38,8 @@ class Document:
     lang: str
     published_at: Optional[str]
     authors: List[str]
-    discovered_via: Dict[str, object]
-    quality: Dict[str, object]
-    dup: Dict[str, object]
-    crawl: Dict[str, object]
-    extra: Dict[str, object] = field(default_factory=dict)
+    discovered_via: Dict[str, Any]
+    quality: Dict[str, Any]
+    dup: Dict[str, Any]
+    crawl: Dict[str, Any]
+    extra: Dict[str, Any] = field(default_factory=dict)

@@ -13,7 +13,6 @@ def test_pipeline_runs_with_forum_candidates(tmp_path, monkeypatch):
     config.limits.max_fetch_per_run = 3
     config.limits.max_candidates_per_source = 10
     # Relax quality for testing
-    config.quality.min_characters = 1
     config.quality.min_keyword_hits = 0
     config.quality.min_keyword_coverage = 0.0
     config.quality.min_score = 0.0

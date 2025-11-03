@@ -31,7 +31,6 @@ class CrawlLimits:
 class QualityConfig:
     min_score: float
     min_keyword_coverage: float
-    min_characters: int
     min_keyword_hits: int
 
 
@@ -49,6 +48,8 @@ class GdeltSourceConfig:
     max_attempts: int = 3
     rate_limit_backoff_sec: float = 5.0
     enabled: bool = True
+    max_concurrency: int = 4
+    max_days_back: Optional[int] = None
 
 
 @dataclass(slots=True)
@@ -183,9 +184,8 @@ def load_config(
 
     quality_cfg = params.get("quality", {})
     quality = QualityConfig(
-        min_score=float(quality_cfg.get("min_score", 0.75)),
+        min_score=float(quality_cfg.get("min_score", 0.3)),
         min_keyword_coverage=float(quality_cfg.get("min_keyword_coverage", 0.05)),
-        min_characters=int(quality_cfg.get("min_characters", 500)),
         min_keyword_hits=int(quality_cfg.get("min_keyword_hits", 1)),
     )
 
@@ -201,6 +201,12 @@ def load_config(
         pause_between_requests=float(gdelt_cfg.get("pause_between_requests", 1.0)),
         max_attempts=int(gdelt_cfg.get("max_attempts", 3)),
         rate_limit_backoff_sec=float(gdelt_cfg.get("rate_limit_backoff_sec", 5.0)),
+        max_concurrency=int(gdelt_cfg.get("max_concurrency", 4)),
+        max_days_back=(
+            int(gdelt_cfg.get("max_days_back"))
+            if gdelt_cfg.get("max_days_back") is not None
+            else None
+        ),
     )
 
     # Forums: dynamically map unknown site keys into ForumSiteConfig instances

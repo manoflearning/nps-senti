@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from time import sleep
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple, Callable
 from urllib.parse import urljoin, urlparse, urlencode, parse_qsl
 
 import requests
@@ -21,14 +21,12 @@ logger = logging.getLogger(__name__)
 @dataclass(slots=True)
 class ForumSiteConfig:
     enabled: bool = True
-    boards: List[str] = None  # list of listing URLs
+    boards: List[str] = field(default_factory=list)  # list of listing URLs
     max_pages: int = 1
     per_board_limit: int = 50
     pause_between_requests: float = 0.5
 
     def __post_init__(self) -> None:
-        if self.boards is None:
-            self.boards = []
         self.max_pages = max(1, int(self.max_pages))
         self.per_board_limit = max(1, int(self.per_board_limit))
         self.pause_between_requests = max(0.0, float(self.pause_between_requests))
@@ -51,15 +49,50 @@ class ForumsDiscoverer:
 
     def __init__(
         self,
-        session: requests.Session,
+        session: Any,
         request_timeout: int,
         user_agent: str,
-        sites_config: Dict[str, ForumSiteConfig],
+        sites_config: Mapping[str, Any],
     ) -> None:
         self.session = session
         self.timeout = request_timeout
         self.sites_config = sites_config
         self.robots = RobotsCache(session, request_timeout, user_agent)
+
+    def _get_href(self, tag) -> Optional[str]:  # type: ignore[no-untyped-def]
+        """Best-effort extract href as str from a tag attribute that can be varied types."""
+        try:
+            value = tag.get("href")
+        except Exception:  # noqa: BLE001
+            return None
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value
+        # bs4 can produce list-like attribute values; pick first stringy part
+        try:
+            if isinstance(value, (list, tuple)) and value:
+                first = value[0]
+                return first if isinstance(first, str) else str(first)
+        except Exception:  # noqa: BLE001
+            return None
+        return str(value)
+
+    def _as_opt_str(self, value: object) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value
+        try:
+            if isinstance(value, (list, tuple)) and value:
+                first = value[0]
+                return first if isinstance(first, str) else str(first)
+        except Exception:  # noqa: BLE001
+            return None
+        try:
+            return str(value)
+        except Exception:  # noqa: BLE001
+            return None
 
     # -------- Parsers per site ---------
     def _parse_dcinside(
@@ -68,7 +101,7 @@ class ForumsDiscoverer:
         soup = BeautifulSoup(html, "html.parser")
         items: List[Tuple[str, Optional[str], Dict[str, Optional[str]]]] = []
         for a in soup.select("td.gall_tit a[href]"):
-            href = a.get("href", "")
+            href = self._get_href(a) or ""
             if "/board/view/" in href:
                 url = urljoin(base_url, href)
                 title = a.get_text(strip=True) or None
@@ -84,14 +117,17 @@ class ForumsDiscoverer:
                         author = writer.get_text(strip=True) or None
                     tdn = tr.select_one("td.gall_date")
                     if tdn:
-                        published_at = tdn.get("title") or tdn.get_text(strip=True)
+                        published_at = self._as_opt_str(
+                            tdn.get("title")
+                        ) or tdn.get_text(strip=True)
                 items.append(
                     (url, title, {"author": author, "published_at": published_at})
                 )
         # Fallback heuristic for some skins
         if not items:
             for a in soup.select('a[href*="/board/view/"]'):
-                url = urljoin(base_url, a.get("href", ""))
+                href = self._get_href(a) or ""
+                url = urljoin(base_url, href)
                 title = a.get_text(strip=True) or None
                 items.append((url, title, {"author": None, "published_at": None}))
         return items
@@ -102,7 +138,8 @@ class ForumsDiscoverer:
         soup = BeautifulSoup(html, "html.parser")
         items: List[Tuple[str, Optional[str], Dict[str, Optional[str]]]] = []
         for a in soup.select('a[href*="/board/bbs_view?"]'):
-            url = urljoin(base_url, a.get("href", ""))
+            href = self._get_href(a) or ""
+            url = urljoin(base_url, href)
             title = a.get_text(strip=True) or None
             tr = a.find_parent("tr")
             author = None
@@ -113,7 +150,9 @@ class ForumsDiscoverer:
                 if au:
                     author = au.get_text(strip=True) or None
                 if dt:
-                    published_at = dt.get("title") or dt.get_text(strip=True)
+                    published_at = self._as_opt_str(dt.get("title")) or dt.get_text(
+                        strip=True
+                    )
             items.append((url, title, {"author": author, "published_at": published_at}))
         return items
 
@@ -124,7 +163,7 @@ class ForumsDiscoverer:
         items: List[Tuple[str, Optional[str], Dict[str, Optional[str]]]] = []
         # Many boards link to /123456789 format
         for a in soup.select("a[href]"):
-            href = a.get("href", "")
+            href = self._get_href(a) or ""
             if re.search(
                 r"/(?:index\.php\?mid=[^&]+&document_srl=\d+|\d{4,})(?:$|\?)", href
             ):
@@ -139,7 +178,9 @@ class ForumsDiscoverer:
                     if au:
                         author = au.get_text(strip=True) or None
                     if dt:
-                        published_at = dt.get("title") or dt.get_text(strip=True)
+                        published_at = self._as_opt_str(dt.get("title")) or dt.get_text(
+                            strip=True
+                        )
                 items.append(
                     (url, title, {"author": author, "published_at": published_at})
                 )
@@ -151,7 +192,8 @@ class ForumsDiscoverer:
         soup = BeautifulSoup(html, "html.parser")
         items: List[Tuple[str, Optional[str], Dict[str, Optional[str]]]] = []
         for a in soup.select('a[href*="/mp/b.php"][href*="m=view"]'):
-            url = urljoin(base_url, a.get("href", ""))
+            href = self._get_href(a) or ""
+            url = urljoin(base_url, href)
             title = a.get_text(strip=True) or None
             tr = a.find_parent("tr")
             author = None
@@ -162,7 +204,9 @@ class ForumsDiscoverer:
                 if au:
                     author = au.get_text(strip=True) or None
                 if dt:
-                    published_at = dt.get("title") or dt.get_text(strip=True)
+                    published_at = self._as_opt_str(dt.get("title")) or dt.get_text(
+                        strip=True
+                    )
             items.append((url, title, {"author": author, "published_at": published_at}))
         return items
 
@@ -172,7 +216,7 @@ class ForumsDiscoverer:
         soup = BeautifulSoup(html, "html.parser")
         items: List[Tuple[str, Optional[str], Dict[str, Optional[str]]]] = []
         for a in soup.select('a[href*="/square/"]'):
-            href = a.get("href", "")
+            href = self._get_href(a) or ""
             if re.search(r"/square/\d+", href):
                 url = urljoin(base_url, href)
                 title = a.get_text(strip=True) or None
@@ -185,7 +229,9 @@ class ForumsDiscoverer:
                     if au:
                         author = au.get_text(strip=True) or None
                     if dt:
-                        published_at = dt.get("title") or dt.get_text(strip=True)
+                        published_at = self._as_opt_str(dt.get("title")) or dt.get_text(
+                            strip=True
+                        )
                 items.append(
                     (url, title, {"author": author, "published_at": published_at})
                 )
@@ -197,7 +243,8 @@ class ForumsDiscoverer:
         soup = BeautifulSoup(html, "html.parser")
         items: List[Tuple[str, Optional[str], Dict[str, Optional[str]]]] = []
         for a in soup.select('a[href*="/zboard/view.php?id="]'):
-            url = urljoin(base_url, a.get("href", ""))
+            href = self._get_href(a) or ""
+            url = urljoin(base_url, href)
             title = a.get_text(strip=True) or None
             tr = a.find_parent("tr")
             author = None
@@ -208,7 +255,9 @@ class ForumsDiscoverer:
                 if au:
                     author = au.get_text(strip=True) or None
                 if dt:
-                    published_at = dt.get("title") or dt.get_text(strip=True)
+                    published_at = self._as_opt_str(dt.get("title")) or dt.get_text(
+                        strip=True
+                    )
             items.append((url, title, {"author": author, "published_at": published_at}))
         return items
 
@@ -226,7 +275,11 @@ class ForumsDiscoverer:
         }.get(site, "page")
         return _update_query_param(base_url, key, str(page))
 
-    def _get_parser(self, site: str):
+    def _get_parser(
+        self, site: str
+    ) -> Optional[
+        Callable[[str, str], List[Tuple[str, Optional[str], Dict[str, Optional[str]]]]]
+    ]:
         return {
             "dcinside": self._parse_dcinside,
             "bobaedream": self._parse_bobaedream,
@@ -265,7 +318,9 @@ class ForumsDiscoverer:
                                 resp.status_code,
                             )
                             break
-                        posts = parser(board_url, resp.text)
+                        posts: List[
+                            Tuple[str, Optional[str], Dict[str, Optional[str]]]
+                        ] = parser(board_url, resp.text)
                     except requests.RequestException as exc:
                         logger.debug(
                             "Listing request error: url=%s error=%s", page_url, exc
@@ -275,9 +330,6 @@ class ForumsDiscoverer:
                     for entry in posts:
                         if isinstance(entry, tuple) and len(entry) == 3:
                             url, title, meta = entry
-                        elif isinstance(entry, tuple) and len(entry) == 2:
-                            url, title = entry
-                            meta = {"author": None, "published_at": None}
                         else:
                             continue
                         if not url:

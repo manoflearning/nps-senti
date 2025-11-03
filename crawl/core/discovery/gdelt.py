@@ -4,7 +4,9 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from time import sleep
-from typing import Iterable, List, Optional, Set
+from typing import Iterable, List, Optional, Set, Tuple
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 import requests
 
@@ -21,6 +23,8 @@ class GdeltConfig:
     pause_between_requests: float = 1.0
     max_attempts: int = 3
     rate_limit_backoff_sec: float = 5.0
+    max_concurrency: int = 4
+    max_days_back: Optional[int] = None
 
 
 class GdeltDiscoverer:
@@ -55,8 +59,12 @@ class GdeltDiscoverer:
             self.config.rate_limit_backoff_sec = 0.0
 
     def _iter_windows(self) -> Iterable[tuple[datetime, datetime]]:
-        start = self.start_date
         end = self.end_date or datetime.now(timezone.utc)
+        start = self.start_date
+        if self.config.max_days_back and self.config.max_days_back > 0:
+            clamp_start = end - timedelta(days=self.config.max_days_back)
+            if clamp_start > start:
+                start = clamp_start
         if start.tzinfo is None:
             start = start.replace(tzinfo=timezone.utc)
         if end.tzinfo is None:
@@ -109,106 +117,129 @@ class GdeltDiscoverer:
         return params
 
     def discover(self) -> List[Candidate]:
-        seen_urls: Set[str] = set()
-        candidates: List[Candidate] = []
+        windows = list(self._iter_windows())
+        tasks: List[Tuple[str, datetime, datetime]] = []
         for keyword in self.keywords:
             if len(keyword.strip()) < 3:
                 continue
-            for window_start, window_end in self._iter_windows():
-                params = self._build_params(keyword, window_start, window_end)
-                attempt = 0
-                response = None
-                while attempt < self.config.max_attempts:
-                    try:
-                        response = self.session.get(
-                            self.API_URL,
-                            params=params,
-                            timeout=self.request_timeout,
-                        )
-                        if response.status_code == 429:
-                            # Respect Retry-After if present; otherwise exponential backoff
-                            retry_after = response.headers.get("Retry-After")
-                            wait = None
-                            if retry_after:
-                                try:
-                                    wait = float(retry_after)
-                                except ValueError:
-                                    wait = None
-                            if wait is None:
-                                wait = self.config.rate_limit_backoff_sec * (2**attempt)
-                            logger.info(
-                                "GDELT rate limited (429). Sleeping %.1fs (attempt %d)",
-                                wait,
-                                attempt + 1,
-                            )
-                            sleep(wait)
-                            attempt += 1
-                            continue
-                        response.raise_for_status()
-                        break
-                    except requests.RequestException as exc:
-                        attempt += 1
-                        logger.warning(
-                            "GDELT request failed: keyword=%s window=%s-%s attempt=%d error=%s",
-                            keyword,
-                            window_start.date(),
-                            window_end.date(),
-                            attempt,
-                            exc,
-                        )
-                        if attempt < self.config.max_attempts:
-                            sleep(self.config.rate_limit_backoff_sec * attempt)
-                        else:
-                            response = None
-                            break
-                if response is None:
-                    # give up for this window/keyword
-                    continue
+            for window_start, window_end in windows:
+                tasks.append((keyword, window_start, window_end))
+
+        seen_urls: Set[str] = set()
+        seen_lock = threading.Lock()
+        results: List[Candidate] = []
+
+        def worker(kw: str, ws: datetime, we: datetime) -> List[Candidate]:
+            params = self._build_params(kw, ws, we)
+            attempt = 0
+            response = None
+            while attempt < self.config.max_attempts:
                 try:
-                    payload = response.json()
-                except ValueError as exc:
+                    response = self.session.get(
+                        self.API_URL,
+                        params=params,
+                        timeout=self.request_timeout,
+                    )
+                    if response.status_code == 429:
+                        retry_after = response.headers.get("Retry-After")
+                        wait = None
+                        if retry_after:
+                            try:
+                                wait = float(retry_after)
+                            except ValueError:
+                                wait = None
+                        if wait is None:
+                            wait = self.config.rate_limit_backoff_sec * (2**attempt)
+                        logger.info(
+                            "GDELT 429 rate-limited. Sleeping %.1fs (attempt %d)",
+                            wait,
+                            attempt + 1,
+                        )
+                        sleep(wait)
+                        attempt += 1
+                        continue
+                    response.raise_for_status()
+                    break
+                except requests.RequestException as exc:
+                    attempt += 1
                     logger.warning(
-                        "GDELT JSON decode failed: keyword=%s window=%s-%s error=%s",
-                        keyword,
-                        window_start.date(),
-                        window_end.date(),
+                        "GDELT request failed: kw=%s window=%s-%s attempt=%d error=%s",
+                        kw,
+                        ws.date(),
+                        we.date(),
+                        attempt,
                         exc,
                     )
+                    if attempt < self.config.max_attempts:
+                        sleep(self.config.rate_limit_backoff_sec * attempt)
+                    else:
+                        response = None
+                        break
+            if response is None:
+                return []
+            try:
+                payload = response.json()
+            except ValueError as exc:
+                logger.warning(
+                    "GDELT JSON decode failed: kw=%s window=%s-%s error=%s",
+                    kw,
+                    ws.date(),
+                    we.date(),
+                    exc,
+                )
+                return []
+            articles = payload.get("articles", [])
+            batch: List[Candidate] = []
+            for article in articles:
+                url = article.get("url")
+                if not url:
                     continue
-                articles = payload.get("articles", [])
-                for article in articles:
-                    url = article.get("url")
-                    if not url or url in seen_urls:
+                with seen_lock:
+                    if url in seen_urls:
                         continue
                     seen_urls.add(url)
-                    seendate = article.get("seendate")
-                    timestamp = None
-                    if seendate:
-                        try:
-                            timestamp = datetime.strptime(seendate, "%Y%m%d")
-                        except ValueError:
-                            timestamp = None
-                    candidates.append(
-                        Candidate(
-                            url=url,
-                            source="gdelt",
-                            discovered_via={
-                                "type": "gdelt",
-                                "keyword": keyword,
-                                "seendate": seendate,
-                                "window": {
-                                    "start": window_start.isoformat(),
-                                    "end": window_end.isoformat(),
-                                },
+                seendate = article.get("seendate")
+                timestamp = None
+                if seendate:
+                    try:
+                        timestamp = datetime.strptime(seendate, "%Y%m%d")
+                    except ValueError:
+                        timestamp = None
+                batch.append(
+                    Candidate(
+                        url=url,
+                        source="gdelt",
+                        discovered_via={
+                            "type": "gdelt",
+                            "keyword": kw,
+                            "seendate": seendate,
+                            "window": {
+                                "start": ws.isoformat(),
+                                "end": we.isoformat(),
                             },
-                            snapshot_url=None,
-                            timestamp=timestamp,
-                            title=article.get("title"),
-                            extra={"gdelt": article},
-                        )
+                        },
+                        snapshot_url=None,
+                        timestamp=timestamp,
+                        title=article.get("title"),
+                        extra={"gdelt": article},
                     )
-                # Courtesy pause to respect rate limits
-                if self.config.pause_between_requests:
-                    sleep(self.config.pause_between_requests)
-        logger.info("GDELT discovered %d candidates", len(candidates))
-        return candidates
+                )
+            if self.config.pause_between_requests:
+                sleep(self.config.pause_between_requests)
+            return batch
+
+        max_workers = max(1, int(self.config.max_concurrency))
+        if len(tasks) <= 1 or max_workers == 1:
+            for kw, ws, we in tasks:
+                results.extend(worker(kw, ws, we))
+        else:
+            with ThreadPoolExecutor(max_workers=max_workers) as ex:
+                futures = [ex.submit(worker, kw, ws, we) for kw, ws, we in tasks]
+                for fut in as_completed(futures):
+                    try:
+                        results.extend(fut.result())
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug("GDELT worker error: %s", exc)
+
+        logger.info("GDELT discovered %d candidates", len(results))
+        return results

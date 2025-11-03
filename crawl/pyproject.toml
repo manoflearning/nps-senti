@@ -1,7 +1,7 @@
 [project]
 name = "nps-senti-crawl"
 version = "0.1.0"
-description = "Plan A crawler pipeline for nps-senti"
+description = "Unified crawler pipeline for nps-senti"
 requires-python = ">=3.13"
 dependencies = [
     "dotenv>=0.9.9",
@@ -10,7 +10,6 @@ dependencies = [
     "python-dateutil>=2.9.0.post0",
     "requests>=2.32.5",
     "beautifulsoup4>=4.12.3",
-    "simhash>=2.1.2",
     "tqdm>=4.66.5",
     "trafilatura>=1.9.0",
 ]

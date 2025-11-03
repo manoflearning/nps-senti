@@ -16,7 +16,6 @@ def test_youtube_augmentation_without_api_key(monkeypatch):
         quality_config=QualityConfig(
             min_score=0.0,
             min_keyword_coverage=0.0,
-            min_characters=1,
             min_keyword_hits=0,
         ),
     )

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, cast
 
 from langdetect import DetectorFactory, LangDetectException, detect
 import trafilatura
@@ -69,7 +69,8 @@ class Extractor:
             )
         # fallback plain text
         try:
-            text_plain = trafilatura.extract(html, url=url, output_format=None)
+            # Default behavior returns plain text when output_format is omitted
+            text_plain = trafilatura.extract(html, url=url)
         except Exception as exc:  # noqa: BLE001
             logger.debug("Trafilatura plain extraction failed: %s", exc)
             return None
@@ -94,11 +95,6 @@ class Extractor:
         score = 0.0
         reasons: List[str] = []
         length = len(text)
-
-        if length >= self.quality_config.min_characters:
-            score += 0.4
-        else:
-            reasons.append("len<threshold")
 
         if lang.lower() in self.allowed_languages:
             score += 0.3
@@ -153,25 +149,22 @@ class Extractor:
 
         lang = self._detect_lang(extraction.text)
         quality = self._build_quality(extraction.text, lang)
-        if quality["keyword_hits"] < self.quality_config.min_keyword_hits:
+        if cast(int, quality["keyword_hits"]) < self.quality_config.min_keyword_hits:
             return None, {
                 "status": "quality-reject",
                 "quality": quality,
                 "reason": "keyword_hits",
             }
-        if quality["keyword_coverage"] < self.quality_config.min_keyword_coverage:
+        if (
+            cast(float, quality["keyword_coverage"])
+            < self.quality_config.min_keyword_coverage
+        ):
             return None, {
                 "status": "quality-reject",
                 "quality": quality,
                 "reason": "coverage",
             }
-        if quality["length"] < self.quality_config.min_characters:
-            return None, {
-                "status": "quality-reject",
-                "quality": quality,
-                "reason": "length",
-            }
-        if quality["score"] < self.quality_config.min_score:
+        if cast(float, quality["score"]) < self.quality_config.min_score:
             return None, {
                 "status": "quality-reject",
                 "quality": quality,
@@ -179,8 +172,8 @@ class Extractor:
             }
 
         url_norm = normalize_url(candidate.url)
-        hash_source = url_norm + "::" + sha1_hex(extraction.text[:1000])
-        doc_id = sha1_hex(hash_source)
+        # Exact-duplicate guard: ID derives only from normalized URL
+        doc_id = sha1_hex(url_norm)
 
         published_at = extraction.published_at
         if published_at and isinstance(published_at, str) and len(published_at) < 10:
@@ -200,7 +193,7 @@ class Extractor:
             authors=extraction.authors,
             discovered_via=candidate.discovered_via,
             quality=quality,
-            dup={"simhash": None, "group": None},
+            dup={},
             crawl={
                 "run_id": run_id,
                 "fetched_at": fetch_result.fetched_at.isoformat() + "Z",
@@ -235,7 +228,9 @@ class Extractor:
 
         comments_texts: List[str] = []
         comments_meta: List[dict] = []
-        video_id = video_details.get("id")
+        video_id = None
+        if isinstance(video_details, dict):
+            video_id = video_details.get("id")
         if not video_id and candidate.url:
             # Try to parse from URL
             from urllib.parse import urlparse, parse_qs

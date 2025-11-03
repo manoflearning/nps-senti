@@ -6,10 +6,10 @@
 
 ## 구현 현황 (2025-11-03)
 
-- `crawl/core/` 하위에 Discover → Fetch → Extract → Deduplicate → Store 단계로 구성.
+- `crawl/core/` 하위에 Discover → Fetch → Extract → Store 단계로 구성.
 - 소스: GDELT Doc API, 주요 커뮤니티(디시/보배/에펨/MLBPARK/더쿠/뽐뿌), YouTube(설명+상위 댓글)만 사용.
-- `langdetect + trafilatura + simhash`로 품질/언어/중복 처리 후 JSONL로 저장.
-- `quality` 파라미터로 최소 본문 길이·키워드·스코어 제어.
+- `langdetect + trafilatura`로 품질/언어 처리 후 JSONL로 저장. (수집 단계에서는 유사 중복 제거 없음)
+- `quality` 파라미터로 키워드·스코어 기준 제어.
 - 실행 결과는 `data_crawl/crawl.jsonl`(또는 설정한 파일명)로 누적. 인덱스는 동일 폴더 `_index.json`.
 
 ### 실행 방법
@@ -57,7 +57,7 @@ uv --project crawl run python -m crawl.cli --no-gdelt --max-fetch 5 --log-level 
 1) Discover: GDELT(키워드/언어/기간), 커뮤니티 목록(보드별), YouTube 검색
 2) Fetch: 라이브 fetch만 사용(robots 준수). 스냅샷/이미지/영상 불수집.
 3) Extract: trafilatura로 본문 텍스트, YouTube는 설명+상위 댓글 병합
-4) Deduplicate & Score: SimHash, 품질 기준(길이/언어/키워드)
+4) Score: 품질 기준(언어/키워드)
 5) Store: `data_crawl/crawl.jsonl`에 저장, `_index.json`으로 중복 차단
 
 산출 기대치(키워드 규모에 따라)
@@ -95,8 +95,8 @@ uv --project crawl run python -m crawl.cli --no-gdelt --max-fetch 5 --log-level 
   "published_at": "YYYY-MM-DDTHH:MM:SSZ|null",
   "authors": ["..."],
   "discovered_via": {"type": "gdelt", "meta": {"...": "..."}},
-  "quality": {"score": 0.0, "reasons": ["len", "lang", "domain"]},
-  "dup": {"simhash": "...", "group": "..."},
+  "quality": {"score": 0.0, "reasons": ["lang", "coverage", "keyword_hits"]},
+  "dup": {},
   "crawl": {"run_id": "2025-11-03-1200", "fetched_at": "..."}
 }
 ```
@@ -114,7 +114,7 @@ YouTube 보조
 
 메타 규칙
 - `published_at`은 소스 메타 또는 본문 추정(날짜 패턴 추론)으로 채움. 불명확 시 null.
-- 텍스트 최소 길이/밀도 기준 미달은 드롭 또는 `quality.score` 낮게 설정.
+- 텍스트 키워드 밀도 등 기준 미달은 드롭 또는 `quality.score` 낮게 설정.
 - 스냅샷/이미지/영상은 저장하지 않음(텍스트만).
 
 ---
@@ -131,7 +131,7 @@ YouTube 보조
 4) Deduper/Scorer
    - URL 정규화(쿼리 파라미터 화이트리스트), canonical 태그 반영, SimHash/MinHash.
 5) Storage
-   - JSONL 저장, run_id 단위 롤업, 인덱스(개념): url_norm, published_at, lang, simhash_group.
+   - JSONL 저장, run_id 단위 롤업, 인덱스(개념): url_norm, published_at, lang
 
 운영
 - 실행 방식: 일회성 대량 백필(run_id로 구분) + 증분 배치. 컨트롤 파일로 대상/기간 분할.
@@ -150,6 +150,9 @@ YouTube 보조
 - output.root: 기본 `data_crawl/` (변경 가능).
 - run_id: 자동 생성(예: YYYYMMDD-hhmm) 또는 수동 지정.
  - sources.gdelt.enabled: true/false 로 GDELT 탐색 on/off 제어
+  - sources.gdelt.max_concurrency: 동시 요청 수(기본 4)
+  - sources.gdelt.max_days_back: 종료시점 기준 최대 조회 일수(범위 축소)
+  - sources.gdelt.pause_between_requests: 요청 간 대기(초)
 
 ---
 
@@ -170,7 +173,7 @@ crawl/
       forums.py
     fetch/                   # 라이브 fetcher(robots 준수)
     extract/                 # 본문·메타 추출(YouTube 댓글 보강)
-    dedupe/                  # SimHash 중복 처리
+    dedupe/                  # (삭제됨) 중복 처리 모듈은 사용하지 않음
     storage/                 # JSONL writer/index
 data_crawl/
   crawl.jsonl                # 통합 산출

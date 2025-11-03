@@ -52,9 +52,9 @@ limits:
   max_fetch_per_run: 200
   request_timeout_sec: 30
 quality:
-  min_score: 0.8
+  # Recall-tuned: no min length threshold; rely on language + keyword
+  min_score: 0.3
   min_keyword_coverage: 0.0
-  min_characters: 800
   min_keyword_hits: 1
 sources:
   gdelt:
@@ -65,6 +65,8 @@ sources:
     pause_between_requests: 1.0
     max_attempts: 3
     rate_limit_backoff_sec: 5.0
+    max_concurrency: 4
+    max_days_back: 60
   forums:
     dcinside:
       enabled: true
