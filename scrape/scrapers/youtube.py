@@ -20,9 +20,7 @@ class YoutubeScraper(BaseScraper):
             raise RuntimeError(
                 "YOUTUBE_API_KEY not found in environment, and api_key argument is empty."
             )
-        self._video_channel_cache: dict[str, Optional[str]] = {}
         self._last_search_params: Optional[dict] = None
-        self.exclude_uploader_comments: bool = True
         self.comment_tz: str = "Asia/Seoul"
 
     @staticmethod
@@ -100,15 +98,17 @@ class YoutubeScraper(BaseScraper):
         end_date: Optional[dt.date] = getattr(self, "end_date", None)
         use_comment_date_filter = bool(start_date and end_date)
 
+        titles_map = self._get_video_titles(video_ids)
+
         all_comments: List[Dict] = []
         for vid in video_ids:
             all_comments.extend(
                 self._fetch_comments_for_video(
                     video_id=vid,
+                    video_title=titles_map.get(vid, ""),
                     include_replies=True,
                     text_format="plainText",
                     max_pages=None,
-                    exclude_uploader_comments=self.exclude_uploader_comments,
                     comment_start_date=start_date if use_comment_date_filter else None,
                     comment_end_date=end_date if use_comment_date_filter else None,
                     comment_tz=self.comment_tz,
@@ -117,37 +117,38 @@ class YoutubeScraper(BaseScraper):
 
         return all_comments
 
-    def _get_video_channel_id(self, video_id: str) -> Optional[str]:
-        if video_id in self._video_channel_cache:
-            return self._video_channel_cache[video_id]
+    def _get_video_titles(self, video_ids: List[str]) -> Dict[str, str]:
+        titles: Dict[str, str] = {}
+        if not video_ids:
+            return titles
 
-        params = {
-            "part": "snippet",
-            "id": video_id,
-            "key": self.api_key,
-            "fields": "items(snippet/channelId)",
-        }
-        resp = requests.get(self.VIDEOS_URL, params=params, timeout=15)
-        if not resp.ok:
-            self._video_channel_cache[video_id] = None
-            return None
-
-        data = resp.json()
-        items = data.get("items") or []
-        chan_id = None
-        if items:
-            sn = items[0].get("snippet") or {}
-            chan_id = sn.get("channelId")
-        self._video_channel_cache[video_id] = chan_id
-        return chan_id
+        for i in range(0, len(video_ids), 50):
+            chunk = video_ids[i : i + 50]
+            params = {
+                "part": "snippet",
+                "id": ",".join(chunk),
+                "key": self.api_key,
+                "fields": "items(id,snippet/title)",
+                "maxResults": 50,
+            }
+            resp = requests.get(self.VIDEOS_URL, params=params, timeout=20)
+            if not resp.ok:
+                continue
+            data = resp.json()
+            for item in data.get("items") or []:
+                vid = item.get("id")
+                title = ((item.get("snippet") or {}).get("title")) or ""
+                if vid:
+                    titles[vid] = title
+        return titles
 
     def _fetch_comments_for_video(
         self,
         video_id: str,
+        video_title: str = "",
         include_replies: bool = True,
         text_format: str = "plainText",
         max_pages: Optional[int] = None,
-        exclude_uploader_comments: bool = True,
         comment_start_date: Optional[dt.date] = None,
         comment_end_date: Optional[dt.date] = None,
         comment_tz: str = "Asia/Seoul",
@@ -161,28 +162,14 @@ class YoutubeScraper(BaseScraper):
             "key": self.api_key,
         }
 
-        uploader_channel_id: Optional[str] = None
-        if exclude_uploader_comments:
-            uploader_channel_id = self._get_video_channel_id(video_id)
-
-        def _is_by_uploader(snippet: dict) -> bool:
-            if not exclude_uploader_comments or not uploader_channel_id:
-                return False
-            author = (snippet.get("authorChannelId") or {}).get("value")
-            return author == uploader_channel_id
-
         use_date_filter = (comment_start_date is not None) and (
             comment_end_date is not None
         )
 
         tz = ZoneInfo(comment_tz)
-        start_local: dt.datetime
-        end_local_excl: dt.datetime
-
         if use_date_filter:
             start_d = cast(dt.date, comment_start_date)
             end_d = cast(dt.date, comment_end_date)
-
             start_local = dt.datetime.combine(start_d, dt.time(0, 0, 0), tzinfo=tz)
             end_local_excl = dt.datetime.combine(
                 end_d + dt.timedelta(days=1), dt.time(0, 0, 0), tzinfo=tz
@@ -228,15 +215,15 @@ class YoutubeScraper(BaseScraper):
                 if not _pass_date(top_sn):
                     hard_stop = True
                 else:
-                    if not _is_by_uploader(top_sn):
-                        results.append(
-                            {
-                                "source": "youtube",
-                                "video_id": video_id,
-                                "text": top_sn.get("textDisplay"),
-                                "published_at": _fmt(top_sn),
-                            }
-                        )
+                    results.append(
+                        {
+                            "source": "youtube",
+                            "video_id": video_id,
+                            "video_title": video_title,
+                            "text": top_sn.get("textDisplay"),
+                            "published_at": _fmt(top_sn),
+                        }
+                    )
 
                     if (
                         include_replies
@@ -246,12 +233,11 @@ class YoutubeScraper(BaseScraper):
                             rs = r.get("snippet") or {}
                             if not _pass_date(rs):
                                 continue
-                            if _is_by_uploader(rs):
-                                continue
                             results.append(
                                 {
                                     "source": "youtube",
                                     "video_id": video_id,
+                                    "video_title": video_title,
                                     "text": rs.get("textDisplay"),
                                     "published_at": _fmt(rs),
                                 }

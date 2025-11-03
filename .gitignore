@@ -15,4 +15,5 @@ wheels/
 .env
 
 data_raw/
-your-data-dir/
+
+.DS_Store
