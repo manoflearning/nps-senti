@@ -12,7 +12,9 @@ ISO_8601_RE = re.compile(
 )
 
 
-def _filter_query_by_domain(host: str, path: str, pairs: list[tuple[str, str]]) -> list[tuple[str, str]]:
+def _filter_query_by_domain(
+    host: str, path: str, pairs: list[tuple[str, str]]
+) -> list[tuple[str, str]]:
     host_l = (host or "").lower()
     path_l = (path or "").lower()
 

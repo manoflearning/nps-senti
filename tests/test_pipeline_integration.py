@@ -9,7 +9,7 @@ from crawl.core.models import Candidate, FetchResult
 def test_pipeline_runs_with_forum_candidates(tmp_path, monkeypatch):
     # Load base config and redirect output to tmp
     config = load_config()
-    config.output = OutputConfig(root=Path(tmp_path), file_name="test_out")
+    config.output = OutputConfig(root=Path(tmp_path), file_name="ignored_in_split")
     config.limits.max_fetch_per_run = 3
     config.limits.max_candidates_per_source = 10
     # Relax quality for testing
@@ -55,6 +55,8 @@ def test_pipeline_runs_with_forum_candidates(tmp_path, monkeypatch):
 
     stats = pipeline.run()
     assert stats.stored >= 1
-    # Output file exists
-    out = Path(tmp_path) / f"{config.output.file_name}.jsonl"
-    assert out.exists() and out.stat().st_size > 0
+    # Per-source output files exist for forums
+    dc_file = Path(tmp_path) / "forum_dcinside.jsonl"
+    bd_file = Path(tmp_path) / "forum_bobaedream.jsonl"
+    assert dc_file.exists() and dc_file.stat().st_size > 0
+    assert bd_file.exists() and bd_file.stat().st_size > 0

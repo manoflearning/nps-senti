@@ -18,7 +18,7 @@ from .extract.extractor import Extractor
 from .fetch.fetcher import Fetcher
 from .models import Candidate
 from .storage.index import DocumentIndex
-from .storage.writer import JsonlWriter
+from .storage.writer import MultiSourceJsonlWriter
 from .utils import normalize_url
 
 logger = logging.getLogger(__name__)
@@ -60,12 +60,8 @@ class UnifiedPipeline:
             config.lang,
             config.quality,
         )
-        # Similarity-based dedupe disabled: keep near-duplicate posts
-        self.storage = JsonlWriter(
-            config.output.root,
-            config.runtime.run_id,
-            file_name=config.output.file_name,
-        )
+        # Write to per-source JSONL files
+        self.storage = MultiSourceJsonlWriter(config.output.root)
         self.index = DocumentIndex(self.storage.output_dir)
 
     def _trim_candidates(self, candidates: List[Candidate]) -> List[Candidate]:
