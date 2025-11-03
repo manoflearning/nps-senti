@@ -137,7 +137,9 @@ class ForumsDiscoverer:
     ) -> List[Tuple[str, Optional[str], Dict[str, Optional[str]]]]:
         soup = BeautifulSoup(html, "html.parser")
         items: List[Tuple[str, Optional[str], Dict[str, Optional[str]]]] = []
-        for a in soup.select('a[href*="/board/bbs_view?"]'):
+        # Support both legacy /board/bbs_view? and current /view? patterns
+        links = soup.select('a[href*="/board/bbs_view?"], a[href*="/view?code="]')
+        for a in links:
             href = self._get_href(a) or ""
             url = urljoin(base_url, href)
             title = a.get_text(strip=True) or None

@@ -79,6 +79,24 @@ def test_bobaedream_parser_basic():
     assert items[0].timestamp is not None
 
 
+def test_bobaedream_parser_view_pattern():
+    # Current production listing links look like /view?code=freeb&No=...
+    html = """
+    <table><tbody>
+      <tr>
+        <td class="tit"><a class="bsubject" href="/view?code=freeb&No=123">현행 링크 제목</a></td>
+        <td class="author">작성자</td>
+        <td class="date">2025-11-03 10:20</td>
+      </tr>
+    </tbody></table>
+    """
+    session = DummySession({})
+    d = build_forums(session, "bobaedream", html)
+    items = d.discover()["bobaedream"]
+    assert items and items[0].title == "현행 링크 제목"
+    assert items[0].timestamp is not None
+
+
 def test_fmkorea_parser_basic():
     html = """
     <table><tbody>

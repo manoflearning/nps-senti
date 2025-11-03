@@ -23,8 +23,10 @@ def _filter_query_by_domain(
         allow = {"id", "no"}
         return [(k, v) for k, v in pairs if k.lower() in allow]
 
-    # Bobaedream thread view
-    if host_l.endswith("bobaedream.co.kr") and "/board/bbs_view" in path_l:
+    # Bobaedream thread view: legacy and current
+    if host_l.endswith("bobaedream.co.kr") and (
+        "/board/bbs_view" in path_l or path_l == "/view"
+    ):
         allow = {"code", "no"}
         return [(k, v) for k, v in pairs if k.lower() in allow]
 

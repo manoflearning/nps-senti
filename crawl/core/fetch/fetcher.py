@@ -82,21 +82,52 @@ class Fetcher:
         self.robots = RobotsCache(session, timeout, self.config.user_agent)
 
     def _decode_bytes(
-        self, body: bytes, content_type: Optional[str]
+        self,
+        body: bytes,
+        content_type: Optional[str],
+        apparent: Optional[str] = None,
     ) -> tuple[str, Optional[str]]:
-        encoding = None
+        # 1) charset from HTTP header
+        header_enc: Optional[str] = None
         if content_type:
             lower = content_type.lower()
             if "charset=" in lower:
-                encoding = lower.split("charset=")[-1].split(";")[0].strip()
-        candidates = [encoding, "utf-8", "euc-kr", "cp949", "latin-1"]
+                header_enc = lower.split("charset=")[-1].split(";")[0].strip()
+
+        # 2) charset from HTML <meta> (scan small prefix of bytes; safe ASCII search)
+        meta_enc: Optional[str] = None
+        head = body[:4096]
+        try:
+            import re as _re  # local alias
+
+            m = _re.search(
+                rb"charset\s*=\s*([A-Za-z0-9_\-]+)", head, flags=_re.IGNORECASE
+            )
+            if m:
+                meta_enc = m.group(1).decode("ascii", errors="ignore").lower()
+        except Exception:  # noqa: BLE001
+            meta_enc = None
+
+        # 3) Heuristic order: header -> apparent -> meta -> utf-8 -> cp949 -> euc-kr -> latin-1
+        candidates = [
+            header_enc,
+            apparent.lower() if apparent else None,
+            meta_enc,
+            "utf-8",
+            "cp949",
+            "euc-kr",
+            "latin-1",
+        ]
+
+        # Try strict decode first to avoid silent mojibake, then fallback with replace
         for enc in candidates:
             if not enc:
                 continue
             try:
-                return body.decode(enc, errors="replace"), enc
-            except LookupError:
+                return body.decode(enc, errors="strict"), enc
+            except Exception:
                 continue
+        # Last-resort: utf-8 with replacement; should rarely be used
         return body.decode("utf-8", errors="replace"), "utf-8"
 
     def _fetch_live(self, candidate: Candidate) -> Optional[FetchResult]:
@@ -115,7 +146,9 @@ class Fetcher:
             logger.debug("Live fetch failed: %s", exc)
             return None
         html, encoding = self._decode_bytes(
-            response.content, response.headers.get("Content-Type")
+            response.content,
+            response.headers.get("Content-Type"),
+            getattr(response, "apparent_encoding", None),
         )
         return FetchResult(
             url=candidate.url,

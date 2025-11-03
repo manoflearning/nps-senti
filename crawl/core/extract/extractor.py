@@ -41,6 +41,28 @@ class Extractor:
         self.quality_config = quality_config
         self.youtube_api_key = os.environ.get("YOUTUBE_API_KEY")
 
+    def _fallback_title_from_html(self, html: str) -> Optional[str]:
+        if not html:
+            return None
+        try:
+            from bs4 import BeautifulSoup  # lazy import
+
+            soup = BeautifulSoup(html, "html.parser")
+            # Prefer OpenGraph title
+            og = soup.select_one('meta[property="og:title"]')
+            if og and og.get("content"):
+                return str(og.get("content")).strip() or None
+            # Common meta alternatives
+            meta_title = soup.select_one('meta[name="title"]')
+            if meta_title and meta_title.get("content"):
+                return str(meta_title.get("content")).strip() or None
+            # Fallback to <title>
+            if soup.title and soup.title.string:
+                return soup.title.string.strip() or None
+        except Exception:  # noqa: BLE001
+            return None
+        return None
+
     def _run_trafilatura(self, html: str, url: str) -> Optional[ExtractionResult]:
         try:
             extraction_json = trafilatura.extract(html, url=url, output_format="json")
@@ -161,12 +183,17 @@ class Extractor:
         if not published_at and candidate.timestamp:
             published_at = candidate.timestamp.isoformat()
 
+        # Prefer extractor's title; if missing, try deriving from HTML head
+        derived_title = extraction.title or self._fallback_title_from_html(
+            fetch_result.html or ""
+        )
+
         document = Document(
             id=doc_id,
             source=candidate.source,
             url=candidate.url,
             snapshot_url=fetch_result.snapshot_url,
-            title=extraction.title or candidate.title,
+            title=derived_title or candidate.title,
             text=extraction.text,
             lang=lang,
             published_at=published_at,
