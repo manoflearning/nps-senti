@@ -30,15 +30,12 @@ def _filter_query_by_domain(
         allow = {"code", "no"}
         return [(k, v) for k, v in pairs if k.lower() in allow]
 
-    # FMKorea document (XE)
-    if host_l.endswith("fmkorea.com"):
-        if "document_srl" in {k.lower() for k, _ in pairs}:
-            allow = {"document_srl"}
-            return [(k, v) for k, v in pairs if k.lower() in allow]
+    # (FMKorea support removed)
 
-    # MLBPark view
+    # MLBPark view: keep board and post id
     if host_l.endswith("mlbpark.donga.com") and "/mp/b.php" in path_l:
-        allow = {"b", "idx"}
+        # Threads typically have m=view and an id; sometimes idx is used
+        allow = {"b", "id", "idx"}
         return [(k, v) for k, v in pairs if k.lower() in allow]
 
     # TheQoo usually path-based; no special query handling needed

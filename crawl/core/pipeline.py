@@ -173,7 +173,6 @@ class UnifiedPipeline:
         ordered_sources = [
             "dcinside",
             "bobaedream",
-            "fmkorea",
             "mlbpark",
             "theqoo",
             "ppomppu",

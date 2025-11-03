@@ -25,6 +25,7 @@ class ForumSiteConfig:
     max_pages: int = 1
     per_board_limit: int = 50
     pause_between_requests: float = 0.5
+    obey_robots: bool = True
 
     def __post_init__(self) -> None:
         self.max_pages = max(1, int(self.max_pages))
@@ -158,43 +159,16 @@ class ForumsDiscoverer:
             items.append((url, title, {"author": author, "published_at": published_at}))
         return items
 
-    def _parse_fmkorea(
-        self, base_url: str, html: str
-    ) -> List[Tuple[str, Optional[str], Dict[str, Optional[str]]]]:
-        soup = BeautifulSoup(html, "html.parser")
-        items: List[Tuple[str, Optional[str], Dict[str, Optional[str]]]] = []
-        # Many boards link to /123456789 format
-        for a in soup.select("a[href]"):
-            href = self._get_href(a) or ""
-            if re.search(
-                r"/(?:index\.php\?mid=[^&]+&document_srl=\d+|\d{4,})(?:$|\?)", href
-            ):
-                url = urljoin(base_url, href)
-                title = a.get_text(strip=True) or None
-                tr = a.find_parent("tr")
-                author = None
-                published_at = None
-                if tr:
-                    au = tr.select_one("td.author, span.author")
-                    dt = tr.select_one("td.time, td.date")
-                    if au:
-                        author = au.get_text(strip=True) or None
-                    if dt:
-                        published_at = self._as_opt_str(dt.get("title")) or dt.get_text(
-                            strip=True
-                        )
-                items.append(
-                    (url, title, {"author": author, "published_at": published_at})
-                )
-        return items
-
     def _parse_mlbpark(
         self, base_url: str, html: str
     ) -> List[Tuple[str, Optional[str], Dict[str, Optional[str]]]]:
         soup = BeautifulSoup(html, "html.parser")
         items: List[Tuple[str, Optional[str], Dict[str, Optional[str]]]] = []
-        for a in soup.select('a[href*="/mp/b.php"][href*="m=view"]'):
+        # MLBPark links can be like /mp/b.php?b=bullpen&m=view&idx=... or sometimes without m=view
+        for a in soup.select('a[href*="/mp/b.php"]'):
             href = self._get_href(a) or ""
+            if "m=view" not in href and "idx=" not in href:
+                continue
             url = urljoin(base_url, href)
             title = a.get_text(strip=True) or None
             tr = a.find_parent("tr")
@@ -270,7 +244,6 @@ class ForumsDiscoverer:
         key = {
             "dcinside": "page",
             "bobaedream": "page",
-            "fmkorea": "page",
             "mlbpark": "p",
             "theqoo": "page",
             "ppomppu": "page",
@@ -285,7 +258,6 @@ class ForumsDiscoverer:
         return {
             "dcinside": self._parse_dcinside,
             "bobaedream": self._parse_bobaedream,
-            "fmkorea": self._parse_fmkorea,
             "mlbpark": self._parse_mlbpark,
             "theqoo": self._parse_theqoo,
             "ppomppu": self._parse_ppomppu,
@@ -301,14 +273,15 @@ class ForumsDiscoverer:
                 logger.debug("No parser for forum site=%s", site)
                 continue
             all_candidates: List[Candidate] = []
+            obey_robots = bool(getattr(cfg, "obey_robots", True))
             for board_url in cfg.boards:
                 if not board_url:
                     continue
                 seen_norm: set[str] = set()
                 for page in range(1, cfg.max_pages + 1):
                     page_url = self._build_page_url(site, board_url, page)
-                    # robots check on listing page
-                    if not self.robots.allowed(page_url):
+                    # robots check on listing page (can be overridden per-site)
+                    if obey_robots and not self.robots.allowed(page_url):
                         logger.debug("Discovery robots disallow: %s", page_url)
                         continue
                     try:
@@ -360,7 +333,16 @@ class ForumsDiscoverer:
                                 title=title,
                                 snapshot_url=None,
                                 timestamp=ts,
-                                extra={"forum": {"site": site, "board": board_url}},
+                                extra={
+                                    "forum": {"site": site, "board": board_url},
+                                    # Hint to fetcher to bypass robots if discovery already did
+                                    # (only set when site explicitly disabled robots obedience)
+                                    **(
+                                        {"robots_override": True}
+                                        if not obey_robots
+                                        else {}
+                                    ),
+                                },
                             )
                         )
                         if len(all_candidates) >= cfg.per_board_limit:

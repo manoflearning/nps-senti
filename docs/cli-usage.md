@@ -17,14 +17,14 @@
   - 지정한 소스만 실행합니다. 미지정 시 설정(및 각 소스 enabled)에 따라 모두 실행합니다.
 - `--forums-sites SITE [...]`
   - forums 실행 시, 지정한 사이트 키만 대상으로 발견을 수행합니다.
-  - 지원 예: `dcinside`, `bobaedream`, `fmkorea`, `mlbpark`, `theqoo`, `ppomppu` (params.yaml에 해당 키가 enabled여야 함)
+  - 지원 예: `dcinside`, `bobaedream`, `mlbpark`, `theqoo`, `ppomppu` (params.yaml에 해당 키가 enabled여야 함)
 - `--max-fetch N`
   - 이번 실행에서 fetch 시도 최대 건수를 제한합니다(저장 건수 아님). 빠른 샘플링에 유용합니다.
 
 ## 예시
 
 - 포럼만 실행: `uv run python -m crawl.cli --only forums`
-- 포럼 중 디시/에펨만: `uv run python -m crawl.cli --only forums --forums-sites dcinside fmkorea`
+- 포럼 중 디시/엠팍만: `uv run python -m crawl.cli --only forums --forums-sites dcinside mlbpark`
 - 유튜브만 실행: `uv run python -m crawl.cli --only youtube`
 - GDELT만 10건만 시도: `uv run python -m crawl.cli --only gdelt --max-fetch 10`
 - 포럼+유튜브 조합, 최대 50건: `uv run python -m crawl.cli --only forums youtube --max-fetch 50`

@@ -31,7 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="+",
         metavar="SITE",
         help=(
-            "Within forums, crawl only these site keys (e.g., dcinside fmkorea). "
+            "Within forums, crawl only these site keys (e.g., dcinside mlbpark). "
             "Defaults to all enabled forum sites in params.yaml."
         ),
     )

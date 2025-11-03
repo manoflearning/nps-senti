@@ -96,22 +96,7 @@ def test_bobaedream_parser_view_pattern():
     assert items and items[0].title == "현행 링크 제목"
     assert items[0].timestamp is not None
 
-
-def test_fmkorea_parser_basic():
-    html = """
-    <table><tbody>
-      <tr>
-        <td class="title"><a href="/123456">에펨 제목</a></td>
-        <td class="author">닉네임</td>
-        <td class="time">2025-11-03 14:00</td>
-      </tr>
-    </tbody></table>
-    """
-    session = DummySession({})
-    d = build_forums(session, "fmkorea", html)
-    items = d.discover()["fmkorea"]
-    assert items and items[0].title == "에펨 제목"
-    assert items[0].timestamp is not None
+    # fmkorea support removed
 
 
 def test_mlbpark_parser_basic():
@@ -129,6 +114,55 @@ def test_mlbpark_parser_basic():
     items = d.discover()["mlbpark"]
     assert items and items[0].title == "불펜 제목"
     assert items[0].timestamp is not None
+
+
+def test_mlbpark_parser_idx_without_m_view():
+    html = """
+    <table><tbody>
+      <tr>
+        <td class="t_left"><a href="/mp/b.php?b=bullpen&idx=4242">불펜 제목2</a></td>
+        <td class="nikcon">닉2</td>
+        <td class="date">2025-11-02</td>
+      </tr>
+    </tbody></table>
+    """
+    session = DummySession({})
+    d = build_forums(session, "mlbpark", html)
+    items = d.discover()["mlbpark"]
+    assert items and items[0].title == "불펜 제목2"
+    assert items[0].timestamp is not None
+
+
+def test_forums_obey_robots_override_allows_discovery_when_blocked():
+    # Simulate robots disallow but site config overrides obey_robots=False
+    html = """
+    <table><tbody>
+      <tr>
+        <td class="t_left"><a href="/mp/b.php?b=bullpen&m=view&idx=99">테스트 글</a></td>
+        <td class="nikcon">닉</td>
+        <td class="date">2025-11-02</td>
+      </tr>
+    </tbody></table>
+    """
+    session = DummySession({})
+    cfg = {
+        "mlbpark": ForumSiteConfig(
+            enabled=True,
+            boards=["https://example.com/"],
+            max_pages=1,
+            per_board_limit=10,
+            pause_between_requests=0,
+            obey_robots=False,
+        )
+    }
+    d = ForumsDiscoverer(
+        session=session, request_timeout=5, user_agent="ua", sites_config=cfg
+    )
+    # Robots disallow
+    d.robots.allowed = lambda _url: False  # type: ignore[attr-defined]
+    session._html_by_url = {"https://example.com/": html}
+    items = d.discover()["mlbpark"]
+    assert items and items[0].title == "테스트 글"
 
 
 def test_theqoo_parser_basic():

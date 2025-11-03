@@ -63,6 +63,7 @@ class ForumSiteConfig:
     max_pages: int = 1
     per_board_limit: int = 50
     pause_between_requests: float = 0.5
+    obey_robots: bool = True
 
 
 @dataclass(slots=True)
@@ -215,6 +216,7 @@ def load_config(
                 max_pages=int(raw.get("max_pages", 1)),
                 per_board_limit=int(raw.get("per_board_limit", 50)),
                 pause_between_requests=float(raw.get("pause_between_requests", 0.5)),
+                obey_robots=bool(raw.get("obey_robots", True)),
             )
     forums = ForumsSourceConfig(sites=forums_sites)
 

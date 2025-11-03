@@ -21,7 +21,10 @@ class FetcherConfig:
     # You can override via env CRAWLER_USER_AGENT to include contact info
     user_agent: str = os.environ.get(
         "CRAWLER_USER_AGENT",
-        "nps-senti-crawler/0.1 (contact: set CRAWLER_USER_AGENT)",
+        # Use a conservative browser-like default UA to avoid degraded responses
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/128.0.0.0 Safari/537.36",
     )
     pause_seconds: float = 0.5
     allow_live_fetch: bool = True
@@ -133,7 +136,16 @@ class Fetcher:
     def _fetch_live(self, candidate: Candidate) -> Optional[FetchResult]:
         if not self.config.allow_live_fetch:
             return None
-        if not self.robots.allowed(candidate.url):
+        # Allow per-candidate override to bypass robots (opt-in via config)
+        if not getattr(candidate.extra or {}, "get", None):
+            # extra is a dict; continue to check normally below
+            pass
+        override = False
+        try:
+            override = bool((candidate.extra or {}).get("robots_override", False))
+        except Exception:  # noqa: BLE001
+            override = False
+        if not override and not self.robots.allowed(candidate.url):
             logger.debug("Live fetch disallowed by robots: %s", candidate.url)
             return None
         headers = {"User-Agent": self.config.user_agent}

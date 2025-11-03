@@ -34,7 +34,6 @@ allow_domains:
   - moneytoday.co.kr
   - gall.dcinside.com
   - www.bobaedream.co.kr
-  - www.fmkorea.com
   - mlbpark.donga.com
   - theqoo.net
   - www.ppomppu.co.kr
@@ -74,14 +73,6 @@ sources:
       max_pages: 2
       per_board_limit: 120
       pause_between_requests: 0.6
-    fmkorea:
-      enabled: true
-      boards:
-        - "https://www.fmkorea.com/football_k"
-        - "https://www.fmkorea.com/index.php?mid=best"
-      max_pages: 2
-      per_board_limit: 120
-      pause_between_requests: 0.6
     mlbpark:
       enabled: true
       boards:
@@ -89,6 +80,7 @@ sources:
       max_pages: 2
       per_board_limit: 120
       pause_between_requests: 0.6
+      obey_robots: false
     theqoo:
       enabled: true
       boards:
