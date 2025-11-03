@@ -66,7 +66,11 @@ class YouTubeDiscoverer:
                 logger.warning("YouTube search request failed: %s", exc)
                 continue
             items = response.json().get("items", [])
-            video_ids = [item["id"]["videoId"] for item in items if "id" in item and "videoId" in item["id"]]
+            video_ids = [
+                item["id"]["videoId"]
+                for item in items
+                if "id" in item and "videoId" in item["id"]
+            ]
             if not video_ids:
                 continue
             details_params = {
@@ -75,12 +79,18 @@ class YouTubeDiscoverer:
                 "id": ",".join(video_ids),
             }
             try:
-                details_resp = requests.get(self.VIDEOS_URL, params=details_params, timeout=30)
+                details_resp = requests.get(
+                    self.VIDEOS_URL, params=details_params, timeout=30
+                )
                 details_resp.raise_for_status()
             except requests.RequestException as exc:
                 logger.warning("YouTube video details failed: %s", exc)
                 continue
-            details = {item["id"]: item for item in details_resp.json().get("items", []) if "id" in item}
+            details = {
+                item["id"]: item
+                for item in details_resp.json().get("items", [])
+                if "id" in item
+            }
             for item in items:
                 vid = item["id"].get("videoId")
                 if not vid:
@@ -90,7 +100,9 @@ class YouTubeDiscoverer:
                 timestamp = None
                 if published_at:
                     try:
-                        timestamp = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
+                        timestamp = datetime.fromisoformat(
+                            published_at.replace("Z", "+00:00")
+                        )
                     except ValueError:
                         timestamp = None
                 candidates.append(

@@ -48,6 +48,7 @@ class GdeltSourceConfig:
     pause_between_requests: float = 1.0
     max_attempts: int = 3
     rate_limit_backoff_sec: float = 5.0
+    enabled: bool = True
 
 
 @dataclass(slots=True)
@@ -151,7 +152,9 @@ def load_config(
     # Prefer inline YAML list if provided; otherwise fallback to file
     allow_domains_param = params.get("allow_domains")
     if isinstance(allow_domains_param, (list, tuple)) and allow_domains_param:
-        allow_domains = [str(d).strip().lower() for d in allow_domains_param if str(d).strip()]
+        allow_domains = [
+            str(d).strip().lower() for d in allow_domains_param if str(d).strip()
+        ]
     else:
         allow_domains = _load_allow_domains(allow_domains_file)
 
@@ -191,6 +194,7 @@ def load_config(
     forums_cfg = sources_cfg.get("forums", {})
 
     gdelt = GdeltSourceConfig(
+        enabled=bool(gdelt_cfg.get("enabled", True)),
         max_records_per_keyword=int(gdelt_cfg.get("max_records_per_keyword", 100)),
         chunk_days=int(gdelt_cfg.get("chunk_days", 30)),
         overlap_days=int(gdelt_cfg.get("overlap_days", 0)),

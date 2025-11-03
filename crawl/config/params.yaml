@@ -58,6 +58,7 @@ quality:
   min_keyword_hits: 1
 sources:
   gdelt:
+    enabled: true
     max_records_per_keyword: 90
     chunk_days: 30
     overlap_days: 2

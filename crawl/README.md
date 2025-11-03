@@ -19,12 +19,16 @@ uv --project crawl sync
 
 # Unified 파이프라인 실행 (예: 5건만 시험 수집)
 uv --project crawl run python -m crawl.cli --max-fetch 5 --log-level INFO
+
+# GDELT가 느리거나 불필요하면 비활성화
+uv --project crawl run python -m crawl.cli --no-gdelt --max-fetch 5 --log-level INFO
 ```
 
 옵션
 - `--params`: 기본 `crawl/config/params.yaml` 대신 다른 설정 파일 사용
 - `--max-fetch`: 실행 시 한 번에 가져올 최대 문서 수(기본 params.yaml의 limits.max_fetch_per_run)
 -- `YOUTUBE_API_KEY` 환경 변수가 설정되어 있으면 YouTube 설명/상위 댓글을 포함한다.
+- `--no-gdelt`: 실행 중 GDELT 탐색 비활성화(느림/쿼터 이슈 회피용)
 
 최근 테스트(2025-11-03)
 – 최근 테스트: GDELT 수백 건 후보, 커뮤니티 보드별 수십~수백 건 발견. 품질/중복 필터 후 수십 건 저장.
@@ -145,6 +149,7 @@ YouTube 보조
 - lang: 기본 "ko" (필요 시 ["ko","en"] 등 확장 가능).
 - output.root: 기본 `data_crawl/` (변경 가능).
 - run_id: 자동 생성(예: YYYYMMDD-hhmm) 또는 수동 지정.
+ - sources.gdelt.enabled: true/false 로 GDELT 탐색 on/off 제어
 
 ---
 

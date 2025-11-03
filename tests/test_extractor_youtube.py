@@ -1,4 +1,3 @@
-import os
 from datetime import datetime
 
 from crawl.core.extract.extractor import Extractor
@@ -14,7 +13,12 @@ def test_youtube_augmentation_without_api_key(monkeypatch):
     extractor = Extractor(
         keywords=["국민연금"],
         allowed_languages=["ko"],
-        quality_config=QualityConfig(min_score=0.0, min_keyword_coverage=0.0, min_characters=1, min_keyword_hits=0),
+        quality_config=QualityConfig(
+            min_score=0.0,
+            min_keyword_coverage=0.0,
+            min_characters=1,
+            min_keyword_hits=0,
+        ),
     )
 
     candidate = Candidate(
@@ -25,7 +29,10 @@ def test_youtube_augmentation_without_api_key(monkeypatch):
         extra={
             "youtube": {
                 "id": "abc123",
-                "snippet": {"title": "영상 제목", "description": "국민연금 설명 텍스트"},
+                "snippet": {
+                    "title": "영상 제목",
+                    "description": "국민연금 설명 텍스트",
+                },
                 "statistics": {"viewCount": 10},
             }
         },

@@ -72,7 +72,9 @@ class GdeltDiscoverer:
                 next_start = window_end
             current_start = next_start
 
-    def _build_params(self, keyword: str, window_start: datetime, window_end: datetime) -> dict[str, str]:
+    def _build_params(
+        self, keyword: str, window_start: datetime, window_end: datetime
+    ) -> dict[str, str]:
         if " " in keyword.strip():
             query_term = f'"{keyword}"'
         else:
@@ -133,7 +135,7 @@ class GdeltDiscoverer:
                                 except ValueError:
                                     wait = None
                             if wait is None:
-                                wait = self.config.rate_limit_backoff_sec * (2 ** attempt)
+                                wait = self.config.rate_limit_backoff_sec * (2**attempt)
                             logger.info(
                                 "GDELT rate limited (429). Sleeping %.1fs (attempt %d)",
                                 wait,

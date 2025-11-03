@@ -57,5 +57,7 @@ class DocumentIndex:
         if not self._dirty:
             return
         payload = {"ids": sorted(self.ids)}
-        self.path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        self.path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
         self._dirty = False

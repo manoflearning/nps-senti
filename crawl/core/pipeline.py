@@ -17,7 +17,7 @@ from .discovery.youtube import YouTubeDiscoverer
 from .discovery.forums import ForumsDiscoverer
 from .extract.extractor import Extractor
 from .fetch.fetcher import Fetcher
-from .models import Candidate, Document
+from .models import Candidate
 from .storage.index import DocumentIndex
 from .storage.writer import JsonlWriter
 from .utils import normalize_url
@@ -78,19 +78,23 @@ class UnifiedPipeline:
 
     def discover(self) -> Dict[str, List[Candidate]]:
         discoveries: Dict[str, List[Candidate]] = {}
-        gdelt = GdeltDiscoverer(
-            session=self.session,
-            keywords=self.config.keywords,
-            languages=self.config.lang,
-            start_date=self.config.time_window.start_date,
-            end_date=self.config.time_window.end_date,
-            request_timeout=self.config.limits.request_timeout_sec,
-            config=GdeltConfig(
-                max_records_per_keyword=self.config.gdelt.max_records_per_keyword,
-                chunk_days=self.config.gdelt.chunk_days,
-                overlap_days=self.config.gdelt.overlap_days,
-            ),
-        )
+        # GDELT discoverer (can be disabled via config)
+        gdelt_candidates: List[Candidate] = []
+        if getattr(self.config.gdelt, "enabled", True):
+            gdelt = GdeltDiscoverer(
+                session=self.session,
+                keywords=self.config.keywords,
+                languages=self.config.lang,
+                start_date=self.config.time_window.start_date,
+                end_date=self.config.time_window.end_date,
+                request_timeout=self.config.limits.request_timeout_sec,
+                config=GdeltConfig(
+                    max_records_per_keyword=self.config.gdelt.max_records_per_keyword,
+                    chunk_days=self.config.gdelt.chunk_days,
+                    overlap_days=self.config.gdelt.overlap_days,
+                ),
+            )
+            gdelt_candidates = gdelt.discover()
         yt = YouTubeDiscoverer(
             api_key=os.environ.get("YOUTUBE_API_KEY"),
             keywords=self.config.keywords,
@@ -107,7 +111,7 @@ class UnifiedPipeline:
             sites_config=forum_sites,
         )
 
-        discoveries["gdelt"] = self._trim_candidates(gdelt.discover())
+        discoveries["gdelt"] = self._trim_candidates(gdelt_candidates)
         discoveries["youtube"] = self._trim_candidates(yt.discover())
         forum_results = forums.discover()
         for site, cands in forum_results.items():
@@ -134,7 +138,16 @@ class UnifiedPipeline:
                     unique_candidates[norm] = candidate
 
         # prioritize forums and gdelt first, youtube last (meta only)
-        ordered_sources = ["dcinside", "bobaedream", "fmkorea", "mlbpark", "theqoo", "ppomppu", "gdelt", "youtube"]
+        ordered_sources = [
+            "dcinside",
+            "bobaedream",
+            "fmkorea",
+            "mlbpark",
+            "theqoo",
+            "ppomppu",
+            "gdelt",
+            "youtube",
+        ]
         all_candidates: List[Candidate] = []
         for source in ordered_sources:
             for candidate in unique_candidates.values():

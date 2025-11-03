@@ -20,7 +20,12 @@ def normalize_url(url: str) -> str:
         netloc = f"{netloc}:{parsed.port}"
     path = parsed.path or "/"
     query_pairs = sorted(parse_qsl(parsed.query, keep_blank_values=True))
-    query = "&".join(f"{k}={v}" for k, v in query_pairs if k.lower() not in {"utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"})
+    query = "&".join(
+        f"{k}={v}"
+        for k, v in query_pairs
+        if k.lower()
+        not in {"utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"}
+    )
     normalized = urlunparse((scheme, netloc, path, "", query, ""))
     return normalized.rstrip("?")
 

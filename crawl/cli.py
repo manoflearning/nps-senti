@@ -18,6 +18,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional path to params.yaml override.",
     )
     parser.add_argument(
+        "--no-gdelt",
+        action="store_true",
+        help="Disable GDELT discovery for this run.",
+    )
+    parser.add_argument(
         "--max-fetch",
         type=int,
         help="Override max_fetch_per_run for this invocation.",
@@ -38,6 +43,10 @@ def apply_overrides(config: CrawlerConfig, args: argparse.Namespace) -> None:
             max_fetch_per_run=args.max_fetch,
             request_timeout_sec=config.limits.request_timeout_sec,
         )
+    if getattr(args, "no_gdelt", False):
+        # Respect missing attr for older callers
+        if hasattr(config, "gdelt") and hasattr(config.gdelt, "enabled"):
+            config.gdelt.enabled = False
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -56,4 +65,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

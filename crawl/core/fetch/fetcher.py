@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import gzip
-import io
 import logging
 import time
 from dataclasses import dataclass
@@ -30,7 +28,9 @@ class FetcherConfig:
 
 
 class RobotsCache:
-    def __init__(self, session: requests.Session, timeout: int, user_agent: str) -> None:
+    def __init__(
+        self, session: requests.Session, timeout: int, user_agent: str
+    ) -> None:
         self.session = session
         self.timeout = timeout
         self.user_agent = user_agent
@@ -75,7 +75,9 @@ class Fetcher:
         self.config = config or FetcherConfig()
         self.robots = RobotsCache(session, timeout, self.config.user_agent)
 
-    def _decode_bytes(self, body: bytes, content_type: Optional[str]) -> tuple[str, Optional[str]]:
+    def _decode_bytes(
+        self, body: bytes, content_type: Optional[str]
+    ) -> tuple[str, Optional[str]]:
         encoding = None
         if content_type:
             lower = content_type.lower()
@@ -91,7 +93,6 @@ class Fetcher:
                 continue
         return body.decode("utf-8", errors="replace"), "utf-8"
 
-
     def _fetch_live(self, candidate: Candidate) -> Optional[FetchResult]:
         if not self.config.allow_live_fetch:
             return None
@@ -100,12 +101,16 @@ class Fetcher:
             return None
         headers = {"User-Agent": self.config.user_agent}
         try:
-            response = self.session.get(candidate.url, headers=headers, timeout=self.timeout)
+            response = self.session.get(
+                candidate.url, headers=headers, timeout=self.timeout
+            )
             response.raise_for_status()
         except requests.RequestException as exc:
             logger.debug("Live fetch failed: %s", exc)
             return None
-        html, encoding = self._decode_bytes(response.content, response.headers.get("Content-Type"))
+        html, encoding = self._decode_bytes(
+            response.content, response.headers.get("Content-Type")
+        )
         return FetchResult(
             url=candidate.url,
             fetched_from="live",

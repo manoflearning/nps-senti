@@ -107,7 +107,9 @@ class Extractor:
 
         text_lower = text.lower()
         keyword_hits = sum(1 for kw in self.keywords_lower if kw and kw in text_lower)
-        coverage = keyword_hits / len(self.keywords_lower) if self.keywords_lower else 0.0
+        coverage = (
+            keyword_hits / len(self.keywords_lower) if self.keywords_lower else 0.0
+        )
         if keyword_hits >= self.quality_config.min_keyword_hits:
             score += 0.2
         else:
@@ -136,7 +138,9 @@ class Extractor:
         if not extraction or not extraction.text:
             # Try YouTube augmentation even if HTML extraction failed
             if candidate.source == "youtube":
-                extraction = ExtractionResult(text="", title=candidate.title, authors=[], published_at=None)
+                extraction = ExtractionResult(
+                    text="", title=candidate.title, authors=[], published_at=None
+                )
             else:
                 return None, {"status": "extract-failed"}
 
@@ -150,13 +154,29 @@ class Extractor:
         lang = self._detect_lang(extraction.text)
         quality = self._build_quality(extraction.text, lang)
         if quality["keyword_hits"] < self.quality_config.min_keyword_hits:
-            return None, {"status": "quality-reject", "quality": quality, "reason": "keyword_hits"}
+            return None, {
+                "status": "quality-reject",
+                "quality": quality,
+                "reason": "keyword_hits",
+            }
         if quality["keyword_coverage"] < self.quality_config.min_keyword_coverage:
-            return None, {"status": "quality-reject", "quality": quality, "reason": "coverage"}
+            return None, {
+                "status": "quality-reject",
+                "quality": quality,
+                "reason": "coverage",
+            }
         if quality["length"] < self.quality_config.min_characters:
-            return None, {"status": "quality-reject", "quality": quality, "reason": "length"}
+            return None, {
+                "status": "quality-reject",
+                "quality": quality,
+                "reason": "length",
+            }
         if quality["score"] < self.quality_config.min_score:
-            return None, {"status": "quality-reject", "quality": quality, "reason": "score"}
+            return None, {
+                "status": "quality-reject",
+                "quality": quality,
+                "reason": "score",
+            }
 
         url_norm = normalize_url(candidate.url)
         hash_source = url_norm + "::" + sha1_hex(extraction.text[:1000])
@@ -197,11 +217,19 @@ class Extractor:
             return ""
         return re.sub(r"<[^>]+>", " ", s).strip()
 
-    def _augment_youtube(self, candidate: Candidate, extraction: ExtractionResult) -> ExtractionResult:
+    def _augment_youtube(
+        self, candidate: Candidate, extraction: ExtractionResult
+    ) -> ExtractionResult:
         # Build text from snippet description + top comments
         video_details = (candidate.extra or {}).get("youtube", {})
-        snippet = video_details.get("snippet", {}) if isinstance(video_details, dict) else {}
-        statistics = video_details.get("statistics", {}) if isinstance(video_details, dict) else {}
+        snippet = (
+            video_details.get("snippet", {}) if isinstance(video_details, dict) else {}
+        )
+        statistics = (
+            video_details.get("statistics", {})
+            if isinstance(video_details, dict)
+            else {}
+        )
         title = extraction.title or snippet.get("title") or candidate.title
         description = snippet.get("description") or ""
 
@@ -233,7 +261,11 @@ class Extractor:
                 if resp.status_code < 400:
                     data = resp.json()
                     for item in data.get("items", []):
-                        top = item.get("snippet", {}).get("topLevelComment", {}).get("snippet", {})
+                        top = (
+                            item.get("snippet", {})
+                            .get("topLevelComment", {})
+                            .get("snippet", {})
+                        )
                         text = top.get("textDisplay") or top.get("textOriginal") or ""
                         text_clean = self._youtube_strip_html(text)
                         if text_clean:

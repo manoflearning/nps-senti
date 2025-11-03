@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from time import sleep
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse, urlencode, parse_qsl
 
 import requests
@@ -62,10 +62,12 @@ class ForumsDiscoverer:
         self.robots = RobotsCache(session, request_timeout, user_agent)
 
     # -------- Parsers per site ---------
-    def _parse_dcinside(self, base_url: str, html: str) -> List[Tuple[str, Optional[str], Dict[str, Optional[str]]]]:
+    def _parse_dcinside(
+        self, base_url: str, html: str
+    ) -> List[Tuple[str, Optional[str], Dict[str, Optional[str]]]]:
         soup = BeautifulSoup(html, "html.parser")
         items: List[Tuple[str, Optional[str], Dict[str, Optional[str]]]] = []
-        for a in soup.select('td.gall_tit a[href]'):
+        for a in soup.select("td.gall_tit a[href]"):
             href = a.get("href", "")
             if "/board/view/" in href:
                 url = urljoin(base_url, href)
@@ -75,13 +77,17 @@ class ForumsDiscoverer:
                 published_at = None
                 tr = a.find_parent("tr")
                 if tr:
-                    writer = tr.select_one("td.gall_writer") or tr.select_one("td.gall_writer ub-writer")
+                    writer = tr.select_one("td.gall_writer") or tr.select_one(
+                        "td.gall_writer ub-writer"
+                    )
                     if writer:
                         author = writer.get_text(strip=True) or None
                     tdn = tr.select_one("td.gall_date")
                     if tdn:
                         published_at = tdn.get("title") or tdn.get_text(strip=True)
-                items.append((url, title, {"author": author, "published_at": published_at}))
+                items.append(
+                    (url, title, {"author": author, "published_at": published_at})
+                )
         # Fallback heuristic for some skins
         if not items:
             for a in soup.select('a[href*="/board/view/"]'):
@@ -90,7 +96,9 @@ class ForumsDiscoverer:
                 items.append((url, title, {"author": None, "published_at": None}))
         return items
 
-    def _parse_bobaedream(self, base_url: str, html: str) -> List[Tuple[str, Optional[str], Dict[str, Optional[str]]]]:
+    def _parse_bobaedream(
+        self, base_url: str, html: str
+    ) -> List[Tuple[str, Optional[str], Dict[str, Optional[str]]]]:
         soup = BeautifulSoup(html, "html.parser")
         items: List[Tuple[str, Optional[str], Dict[str, Optional[str]]]] = []
         for a in soup.select('a[href*="/board/bbs_view?"]'):
@@ -109,13 +117,17 @@ class ForumsDiscoverer:
             items.append((url, title, {"author": author, "published_at": published_at}))
         return items
 
-    def _parse_fmkorea(self, base_url: str, html: str) -> List[Tuple[str, Optional[str], Dict[str, Optional[str]]]]:
+    def _parse_fmkorea(
+        self, base_url: str, html: str
+    ) -> List[Tuple[str, Optional[str], Dict[str, Optional[str]]]]:
         soup = BeautifulSoup(html, "html.parser")
         items: List[Tuple[str, Optional[str], Dict[str, Optional[str]]]] = []
         # Many boards link to /123456789 format
-        for a in soup.select('a[href]'):
+        for a in soup.select("a[href]"):
             href = a.get("href", "")
-            if re.search(r"/(?:index\.php\?mid=[^&]+&document_srl=\d+|\d{4,})(?:$|\?)", href):
+            if re.search(
+                r"/(?:index\.php\?mid=[^&]+&document_srl=\d+|\d{4,})(?:$|\?)", href
+            ):
                 url = urljoin(base_url, href)
                 title = a.get_text(strip=True) or None
                 tr = a.find_parent("tr")
@@ -128,10 +140,14 @@ class ForumsDiscoverer:
                         author = au.get_text(strip=True) or None
                     if dt:
                         published_at = dt.get("title") or dt.get_text(strip=True)
-                items.append((url, title, {"author": author, "published_at": published_at}))
+                items.append(
+                    (url, title, {"author": author, "published_at": published_at})
+                )
         return items
 
-    def _parse_mlbpark(self, base_url: str, html: str) -> List[Tuple[str, Optional[str], Dict[str, Optional[str]]]]:
+    def _parse_mlbpark(
+        self, base_url: str, html: str
+    ) -> List[Tuple[str, Optional[str], Dict[str, Optional[str]]]]:
         soup = BeautifulSoup(html, "html.parser")
         items: List[Tuple[str, Optional[str], Dict[str, Optional[str]]]] = []
         for a in soup.select('a[href*="/mp/b.php"][href*="m=view"]'):
@@ -150,7 +166,9 @@ class ForumsDiscoverer:
             items.append((url, title, {"author": author, "published_at": published_at}))
         return items
 
-    def _parse_theqoo(self, base_url: str, html: str) -> List[Tuple[str, Optional[str], Dict[str, Optional[str]]]]:
+    def _parse_theqoo(
+        self, base_url: str, html: str
+    ) -> List[Tuple[str, Optional[str], Dict[str, Optional[str]]]]:
         soup = BeautifulSoup(html, "html.parser")
         items: List[Tuple[str, Optional[str], Dict[str, Optional[str]]]] = []
         for a in soup.select('a[href*="/square/"]'):
@@ -168,10 +186,14 @@ class ForumsDiscoverer:
                         author = au.get_text(strip=True) or None
                     if dt:
                         published_at = dt.get("title") or dt.get_text(strip=True)
-                items.append((url, title, {"author": author, "published_at": published_at}))
+                items.append(
+                    (url, title, {"author": author, "published_at": published_at})
+                )
         return items
 
-    def _parse_ppomppu(self, base_url: str, html: str) -> List[Tuple[str, Optional[str], Dict[str, Optional[str]]]]:
+    def _parse_ppomppu(
+        self, base_url: str, html: str
+    ) -> List[Tuple[str, Optional[str], Dict[str, Optional[str]]]]:
         soup = BeautifulSoup(html, "html.parser")
         items: List[Tuple[str, Optional[str], Dict[str, Optional[str]]]] = []
         for a in soup.select('a[href*="/zboard/view.php?id="]'):
@@ -237,11 +259,17 @@ class ForumsDiscoverer:
                     try:
                         resp = self.session.get(page_url, timeout=self.timeout)
                         if resp.status_code >= 400:
-                            logger.debug("Listing fetch failed %s status=%s", page_url, resp.status_code)
+                            logger.debug(
+                                "Listing fetch failed %s status=%s",
+                                page_url,
+                                resp.status_code,
+                            )
                             break
                         posts = parser(board_url, resp.text)
                     except requests.RequestException as exc:
-                        logger.debug("Listing request error: url=%s error=%s", page_url, exc)
+                        logger.debug(
+                            "Listing request error: url=%s error=%s", page_url, exc
+                        )
                         break
                     # Normalize and de-dup within board
                     for entry in posts:
@@ -260,7 +288,9 @@ class ForumsDiscoverer:
                         seen_norm.add(norm)
                         # parse timestamp
                         ts: Optional[datetime] = None
-                        published_at = meta.get("published_at") if isinstance(meta, dict) else None
+                        published_at = (
+                            meta.get("published_at") if isinstance(meta, dict) else None
+                        )
                         if published_at and isinstance(published_at, str):
                             ts = self._parse_datetime_guess(published_at)
                         all_candidates.append(
@@ -285,7 +315,9 @@ class ForumsDiscoverer:
                         break
                     sleep(cfg.pause_between_requests)
             per_site[site] = all_candidates
-            logger.info("ForumsDiscoverer site=%s discovered=%d", site, len(all_candidates))
+            logger.info(
+                "ForumsDiscoverer site=%s discovered=%d", site, len(all_candidates)
+            )
         return per_site
 
     # ----- helpers -----

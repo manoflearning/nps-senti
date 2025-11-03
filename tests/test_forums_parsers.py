@@ -1,8 +1,3 @@
-import types
-from pathlib import Path
-
-import pytest
-
 from crawl.core.discovery.forums import ForumsDiscoverer, ForumSiteConfig
 
 
@@ -26,8 +21,17 @@ class DummySession:
 
 
 def build_forums(session, site: str, html: str):
-    cfg = {site: ForumSiteConfig(enabled=True, boards=["https://example.com/"], max_pages=1, per_board_limit=10)}
-    discoverer = ForumsDiscoverer(session=session, request_timeout=5, user_agent="test-agent", sites_config=cfg)
+    cfg = {
+        site: ForumSiteConfig(
+            enabled=True,
+            boards=["https://example.com/"],
+            max_pages=1,
+            per_board_limit=10,
+        )
+    }
+    discoverer = ForumsDiscoverer(
+        session=session, request_timeout=5, user_agent="test-agent", sites_config=cfg
+    )
     # allow all robots
     discoverer.robots.allowed = lambda _url: True  # type: ignore[attr-defined]
     # Inject fixture mapping for base url
@@ -168,7 +172,9 @@ def test_pagination_and_limit():
             pause_between_requests=0,
         )
     }
-    d = ForumsDiscoverer(session=session, request_timeout=5, user_agent="ua", sites_config=cfg)
+    d = ForumsDiscoverer(
+        session=session, request_timeout=5, user_agent="ua", sites_config=cfg
+    )
     d.robots.allowed = lambda _url: True  # type: ignore[attr-defined]
     session._html_by_url = {"https://example.com/": html}
     res = d.discover()["dcinside"]
