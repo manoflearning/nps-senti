@@ -10,6 +10,11 @@
 
 환경 변수
 - `YOUTUBE_API_KEY`가 설정되어 있으면 YouTube 발견 및 댓글/메타 보강이 활성화됩니다.
+- (선택) YouTube 댓글 옵션
+  - `YOUTUBE_COMMENTS_PAGES` (기본 5): 페이지 수 제한
+  - `YOUTUBE_COMMENTS_INCLUDE_REPLIES` (기본 true): 대댓글 포함
+  - `YOUTUBE_COMMENTS_ORDER` (기본 relevance): `relevance` 또는 `time`
+  - `YOUTUBE_COMMENTS_TEXT_FORMAT` (기본 html): `html` 또는 `plainText`
 
 ## 주요 옵션
 

@@ -41,6 +41,37 @@ class Extractor:
         self.quality_config = quality_config
         self.youtube_api_key = os.environ.get("YOUTUBE_API_KEY")
 
+        # YouTube comments fetching knobs (env-based to avoid config churn)
+        # - YOUTUBE_COMMENTS_PAGES: how many pages to fetch (default: 5)
+        # - YOUTUBE_COMMENTS_INCLUDE_REPLIES: include replies (true/false; default: true)
+        # - YOUTUBE_COMMENTS_ORDER: relevance|time (default: relevance)
+        # - YOUTUBE_COMMENTS_TEXT_FORMAT: html|plainText (default: html)
+        def _env_bool(name: str, default: bool = False) -> bool:
+            v = os.environ.get(name)
+            if v is None:
+                return default
+            v = v.strip().lower()
+            return v in {"1", "true", "yes", "y", "on"}
+
+        def _env_int(name: str, default: int) -> int:
+            try:
+                return int(os.environ.get(name, str(default)))
+            except ValueError:
+                return default
+
+        self.youtube_comments_pages = max(0, _env_int("YOUTUBE_COMMENTS_PAGES", 5))
+        self.youtube_comments_include_replies = _env_bool(
+            "YOUTUBE_COMMENTS_INCLUDE_REPLIES", True
+        )
+        order = (os.environ.get("YOUTUBE_COMMENTS_ORDER") or "relevance").lower()
+        self.youtube_comments_order = (
+            order if order in {"relevance", "time"} else "relevance"
+        )
+        fmt = (os.environ.get("YOUTUBE_COMMENTS_TEXT_FORMAT") or "html").strip()
+        self.youtube_comments_text_format = (
+            fmt if fmt in {"html", "plainText"} else "html"
+        )
+
     def _fallback_title_from_html(self, html: str) -> Optional[str]:
         if not html:
             return None
@@ -247,20 +278,30 @@ class Extractor:
             if "v" in qs and qs["v"]:
                 video_id = qs["v"][0]
 
-        # Fetch top-level comments (best-effort)
-        if self.youtube_api_key and video_id:
+        # Fetch comments (best-effort, optional pagination/replies)
+        if self.youtube_api_key and video_id and self.youtube_comments_pages > 0:
             try:
                 url = "https://www.googleapis.com/youtube/v3/commentThreads"
                 params = {
                     "key": self.youtube_api_key,
-                    "part": "snippet",
+                    "part": (
+                        "snippet,replies"
+                        if self.youtube_comments_include_replies
+                        else "snippet"
+                    ),
                     "videoId": video_id,
-                    "maxResults": "50",
-                    "order": "relevance",
-                    "textFormat": "html",
+                    "maxResults": "100",
+                    "order": self.youtube_comments_order,
+                    "textFormat": self.youtube_comments_text_format,
                 }
-                resp = requests.get(url, params=params, timeout=20)
-                if resp.status_code < 400:
+                page_token: Optional[str] = None
+                pages = 0
+                while True:
+                    if page_token:
+                        params["pageToken"] = page_token
+                    resp = requests.get(url, params=params, timeout=20)
+                    if resp.status_code >= 400:
+                        break
                     data = resp.json()
                     for item in data.get("items", []):
                         top = (
@@ -268,8 +309,13 @@ class Extractor:
                             .get("topLevelComment", {})
                             .get("snippet", {})
                         )
-                        text = top.get("textDisplay") or top.get("textOriginal") or ""
-                        text_clean = self._youtube_strip_html(text)
+                        if self.youtube_comments_text_format == "html":
+                            text = top.get("textDisplay") or ""
+                            text_clean = self._youtube_strip_html(text)
+                        else:
+                            text_clean = (
+                                top.get("textOriginal") or top.get("textDisplay") or ""
+                            ).strip()
                         if text_clean:
                             comments_texts.append(text_clean)
                             comments_meta.append(
@@ -279,6 +325,36 @@ class Extractor:
                                     "publishedAt": top.get("publishedAt"),
                                 }
                             )
+                        if self.youtube_comments_include_replies:
+                            replies = (item.get("replies") or {}).get(
+                                "comments", []
+                            ) or []
+                            for r in replies:
+                                rs = r.get("snippet", {})
+                                if self.youtube_comments_text_format == "html":
+                                    r_text = rs.get("textDisplay") or ""
+                                    r_clean = self._youtube_strip_html(r_text)
+                                else:
+                                    r_clean = (
+                                        rs.get("textOriginal")
+                                        or rs.get("textDisplay")
+                                        or ""
+                                    ).strip()
+                                if r_clean:
+                                    comments_texts.append(r_clean)
+                                    comments_meta.append(
+                                        {
+                                            "author": rs.get("authorDisplayName"),
+                                            "likeCount": rs.get("likeCount"),
+                                            "publishedAt": rs.get("publishedAt"),
+                                        }
+                                    )
+                    pages += 1
+                    if pages >= self.youtube_comments_pages:
+                        break
+                    page_token = data.get("nextPageToken")
+                    if not page_token:
+                        break
             except requests.RequestException:
                 pass
 
