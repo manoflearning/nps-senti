@@ -78,6 +78,7 @@ def plan_round(
     round_max_fetch: Optional[int],
     max_gdelt_windows: int,
     max_youtube_windows: int,
+    max_forums_windows: int,
     max_youtube_keywords: int,
     include_forums: bool,
 ) -> RoundPlan:
@@ -99,12 +100,25 @@ def plan_round(
         return total_def * age_weight
 
     ranked = sorted(recent_buckets, key=_score, reverse=True)
+    # Rotate ranked list by bucket_cursor to avoid repeating the same bucket
+    cursor = max(0, int(state.bucket_cursor)) % max(1, len(ranked))
+    ranked = ranked[cursor:] + ranked[:cursor]
 
-    windows: Dict[str, List[Tuple[datetime, datetime]]] = {"gdelt": [], "youtube": []}
+    windows: Dict[str, List[Tuple[datetime, datetime]]] = {
+        "gdelt": [],
+        "youtube": [],
+        "forums": [],
+    }
 
     # Choose up to N windows per source from top-deficit buckets
     for bucket in ranked:
-        if len(windows["gdelt"]) < max_gdelt_windows and deficits[bucket]["gdelt"] > 0:
+        # skip buckets under cooldown for a source
+        cool = state.cooldowns.get(bucket, {})
+        if (
+            len(windows["gdelt"]) < max_gdelt_windows
+            and deficits[bucket]["gdelt"] > 0
+            and not cool.get("gdelt")
+        ):
             # month window
             year, month = map(int, bucket.split("-"))
             start = datetime(year, month, 1, tzinfo=timezone.utc)
@@ -116,6 +130,7 @@ def plan_round(
         if (
             len(windows["youtube"]) < max_youtube_windows
             and deficits[bucket]["youtube"] > 0
+            and not cool.get("youtube")
         ):
             year, month = map(int, bucket.split("-"))
             start = datetime(year, month, 1, tzinfo=timezone.utc)
@@ -125,8 +140,22 @@ def plan_round(
             if end > start:
                 windows["youtube"].append((start, end))
         if (
+            include_forums
+            and len(windows["forums"]) < max_forums_windows
+            and deficits[bucket]["forums"] > 0
+            and not cool.get("forums")
+        ):
+            year, month = map(int, bucket.split("-"))
+            start = datetime(year, month, 1, tzinfo=timezone.utc)
+            end = _next_month(start)
+            if end > now:
+                end = now
+            if end > start:
+                windows["forums"].append((start, end))
+        if (
             len(windows["gdelt"]) >= max_gdelt_windows
             and len(windows["youtube"]) >= max_youtube_windows
+            and (not include_forums or len(windows["forums"]) >= 1)
         ):
             break
 

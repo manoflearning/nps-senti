@@ -47,21 +47,21 @@ sources:
       enabled: true
       boards:
         - "https://gall.dcinside.com/mgallery/board/lists/?id=pension"
-      max_pages: 1
+      max_pages: 10
       per_board_limit: 120
       pause_between_requests: 0.6
     bobaedream:
       enabled: true
       boards:
         - "https://www.bobaedream.co.kr/list?code=freeb"
-      max_pages: 1
+      max_pages: 10
       per_board_limit: 120
       pause_between_requests: 0.6
     mlbpark:
       enabled: true
       boards:
         - "https://mlbpark.donga.com/mp/b.php?b=bullpen"
-      max_pages: 1
+      max_pages: 10
       per_board_limit: 120
       pause_between_requests: 0.6
       obey_robots: false
@@ -69,16 +69,16 @@ sources:
       enabled: true
       boards:
         - "https://theqoo.net/square"
-      max_pages: 1
+      max_pages: 10
       per_board_limit: 120
       pause_between_requests: 0.6
-  ppomppu:
-    enabled: true
-    boards:
-      - "https://www.ppomppu.co.kr/zboard/zboard.php?id=freeboard"
-    max_pages: 1
-    per_board_limit: 120
-    pause_between_requests: 0.6
+    ppomppu:
+      enabled: true
+      boards:
+        - "https://www.ppomppu.co.kr/zboard/zboard.php?id=freeboard"
+      max_pages: 10
+      per_board_limit: 120
+      pause_between_requests: 0.6
 
 autocrawl:
   enabled: true

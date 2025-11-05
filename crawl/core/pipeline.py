@@ -3,7 +3,8 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from typing import Callable, Dict, Iterable, List, Mapping, Optional, cast
+from typing import Callable, Dict, Iterable, List, Mapping, Optional, Tuple, cast
+from datetime import datetime
 
 import requests
 from dotenv import load_dotenv
@@ -48,6 +49,11 @@ class UnifiedPipeline:
         max_fetch: int | None = None,
         store_observer: Optional[Callable[["Document", "Candidate"], None]] = None,
         source_keyword_filter: Optional[Mapping[str, Iterable[str]]] = None,
+        forums_time_window: Optional[
+            Tuple[Optional[datetime], Optional[datetime]]
+        ] = None,
+        forums_until_date: Optional[datetime] = None,
+        forums_board_cursors: Optional[Mapping[str, int]] = None,
     ) -> None:
         self.config = config
         # Optional limiter to run only selected sources
@@ -85,6 +91,10 @@ class UnifiedPipeline:
         self.index = DocumentIndex(self.storage.output_dir)
         # Optional per-source keyword filter (e.g., limit YouTube keywords to save quota)
         self._source_keyword_filter = source_keyword_filter
+        self._forums_time_window = forums_time_window
+        self._forums_until_date = forums_until_date
+        self._forums_board_cursors = forums_board_cursors or {}
+        self.last_forums_pages: Dict[str, int] = {}
 
     def _trim_candidates(self, candidates: List[Candidate]) -> List[Candidate]:
         max_total = self.config.limits.max_candidates_per_source
@@ -152,6 +162,14 @@ class UnifiedPipeline:
                 request_timeout=self.config.limits.request_timeout_sec,
                 user_agent=self.fetcher.config.user_agent,
                 sites_config=forum_sites,
+                window_start=(
+                    self._forums_time_window[0] if self._forums_time_window else None
+                ),
+                window_end=(
+                    self._forums_time_window[1] if self._forums_time_window else None
+                ),
+                until_date=self._forums_until_date,
+                board_cursors=self._forums_board_cursors,
             )
 
         if _should_run("gdelt"):
@@ -160,6 +178,11 @@ class UnifiedPipeline:
             discoveries["youtube"] = self._trim_candidates(yt.discover())
         if forums is not None:
             forum_results = forums.discover()
+            # expose pages visited per board for cursor advancement
+            try:
+                self.last_forums_pages = dict(forums.last_board_pages)
+            except Exception:  # noqa: BLE001
+                self.last_forums_pages = {}
             for site, cands in forum_results.items():
                 discoveries[site] = self._trim_candidates(cands)
         return discoveries
@@ -221,6 +244,14 @@ class UnifiedPipeline:
             if self.max_fetch is not None and attempted >= self.max_fetch:
                 break
             attempted += 1
+            # Early skip if this URL was already stored previously
+            try:
+                if self.index.contains_url(candidate.url):
+                    duplicates += 1
+                    index_duplicates += 1
+                    continue
+            except Exception:  # noqa: BLE001
+                pass
             fetch_result = self.fetcher.fetch(candidate)
             if not fetch_result or not fetch_result.html:
                 failed_fetch += 1

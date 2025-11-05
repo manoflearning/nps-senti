@@ -10,6 +10,9 @@ from ..pipeline import UnifiedPipeline
 from ..storage.index import DocumentIndex
 from .scheduler import plan_round
 from .state import AutoState
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def _clone_with_timewindow(
@@ -58,9 +61,13 @@ class AutoCrawler:
         max_youtube_windows: int = 1,
         max_youtube_keywords: int = 2,
         include_forums: bool = True,
+        max_forums_windows: int = 1,
     ) -> Dict[str, int]:
         # Possibly adjust environment to reduce YouTube comment API usage
         os.environ.setdefault("YOUTUBE_COMMENTS_PAGES", "0")
+
+        # Step 0: decay cooldowns
+        self.state.tick_cooldowns()
 
         plan = plan_round(
             self.base_config,
@@ -70,11 +77,25 @@ class AutoCrawler:
             round_max_fetch=round_max_fetch,
             max_gdelt_windows=max_gdelt_windows,
             max_youtube_windows=max_youtube_windows,
+            max_forums_windows=(max_forums_windows if include_forums else 0),
             max_youtube_keywords=max_youtube_keywords,
             include_forums=include_forums,
         )
 
         totals: Dict[str, int] = {"stored": 0, "fetched": 0, "discovered": 0}
+
+        # Log plan summary for visibility
+        def _fmt_windows(arr):
+            return [f"{s.isoformat()}→{e.isoformat()}" for s, e in arr]
+
+        logger.info(
+            "Auto plan: gdelt=%s youtube=%s yt_keywords=%s forums=%s max_fetch=%s",
+            _fmt_windows(plan.windows.get("gdelt", [])),
+            _fmt_windows(plan.windows.get("youtube", [])),
+            plan.youtube_keywords,
+            plan.include_forums,
+            plan.max_fetch,
+        )
 
         # For each planned source, run pipeline with an overridden window
         # GDELT windows
@@ -90,6 +111,15 @@ class AutoCrawler:
             totals["stored"] += stats.stored
             totals["fetched"] += stats.fetched
             totals["discovered"] += sum(stats.discovered.values())
+            # cooldown decision for this bucket
+            bucket = f"{start.year:04d}-{start.month:02d}"
+            self.state.apply_cooldown(
+                bucket,
+                "gdelt",
+                stored=stats.stored,
+                fetched=stats.fetched,
+                duplicates_skipped=stats.duplicates_skipped,
+            )
 
         # YouTube windows (with keyword subset)
         for start, end in plan.windows.get("youtube", []):
@@ -106,21 +136,46 @@ class AutoCrawler:
             totals["stored"] += stats.stored
             totals["fetched"] += stats.fetched
             totals["discovered"] += sum(stats.discovered.values())
+            bucket = f"{start.year:04d}-{start.month:02d}"
+            self.state.apply_cooldown(
+                bucket,
+                "youtube",
+                stored=stats.stored,
+                fetched=stats.fetched,
+                duplicates_skipped=stats.duplicates_skipped,
+            )
 
-        # Forums (time window irrelevant; run once if included)
-        if plan.include_forums:
-            # Use the current base time window (no need to override)
+        # Forums windows
+        for start, end in plan.windows.get("forums", []):
+            # Build board cursor map from state
+            cursors = dict(self.state.forum_cursors)
             pipe = UnifiedPipeline(
                 self.base_config,
                 include_sources={"forums"},
                 max_fetch=plan.max_fetch,
                 store_observer=self._observer(self.state),
+                forums_time_window=(start, end),
+                forums_until_date=start,
+                forums_board_cursors=cursors,
             )
             stats = pipe.run()
             totals["stored"] += stats.stored
             totals["fetched"] += stats.fetched
             totals["discovered"] += sum(stats.discovered.values())
+            # advance cursors based on pages visited
+            for board_url, last_page in pipe.last_forums_pages.items():
+                self.state.forum_cursors[board_url] = int(last_page) + 1
+            bucket = f"{start.year:04d}-{start.month:02d}"
+            self.state.apply_cooldown(
+                bucket,
+                "forums",
+                stored=stats.stored,
+                fetched=stats.fetched,
+                duplicates_skipped=stats.duplicates_skipped,
+            )
 
+        # Advance rotation cursor to rotate buckets next round
+        self.state.bucket_cursor = (self.state.bucket_cursor + 1) % 120  # keep bounded
         # Persist state
         self.state.save(self.state_path)
         return totals

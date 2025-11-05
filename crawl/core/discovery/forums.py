@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from time import sleep
 from typing import Any, Dict, List, Mapping, Optional, Tuple, Callable
 from urllib.parse import urljoin, urlparse, urlencode, parse_qsl
@@ -46,11 +46,22 @@ class ForumsDiscoverer:
         request_timeout: int,
         user_agent: str,
         sites_config: Mapping[str, Any],
+        *,
+        window_start: Optional[datetime] = None,
+        window_end: Optional[datetime] = None,
+        until_date: Optional[datetime] = None,
+        board_cursors: Optional[Mapping[str, int]] = None,
     ) -> None:
         self.session = session
         self.timeout = request_timeout
         self.sites_config = sites_config
         self.robots = RobotsCache(session, request_timeout, user_agent)
+        # Optional time filters & pagination controls
+        self.window_start = window_start
+        self.window_end = window_end
+        self.until_date = until_date
+        self.board_cursors = dict(board_cursors or {})
+        self.last_board_pages: Dict[str, int] = {}
 
     def _get_href(self, tag) -> Optional[str]:  # type: ignore[no-untyped-def]
         """Best-effort extract href as str from a tag attribute that can be varied types."""
@@ -287,7 +298,10 @@ class ForumsDiscoverer:
                 if not board_url:
                     continue
                 seen_norm: set[str] = set()
-                for page in range(1, cfg.max_pages + 1):
+                # Start from saved cursor, advance up to max_pages for this round
+                start_page = int(self.board_cursors.get(board_url, 1))
+                last_page_visited = start_page - 1
+                for page in range(start_page, start_page + cfg.max_pages):
                     page_url = self._build_page_url(site, board_url, page)
                     # robots check on listing page (can be overridden per-site)
                     if obey_robots and not self.robots.allowed(page_url):
@@ -311,6 +325,7 @@ class ForumsDiscoverer:
                         )
                         break
                     # Normalize and de-dup within board
+                    page_oldest_ts: Optional[datetime] = None
                     for entry in posts:
                         if isinstance(entry, tuple) and len(entry) == 3:
                             url, title, meta = entry
@@ -329,6 +344,25 @@ class ForumsDiscoverer:
                         )
                         if published_at and isinstance(published_at, str):
                             ts = self._parse_datetime_guess(published_at)
+                        # normalize to UTC-aware for comparison
+                        ts_aware: Optional[datetime] = None
+                        if ts is not None:
+                            ts_aware = (
+                                ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+                            )
+                            ts_aware = ts_aware.astimezone(timezone.utc)
+                            # time-window filtering: keep only posts within [start, end)
+                            if self.window_start and ts_aware < self.window_start:
+                                ts_aware = None
+                            if (
+                                ts_aware
+                                and self.window_end
+                                and ts_aware >= self.window_end
+                            ):
+                                ts_aware = None
+                        # If filtering by time window but timestamp missing, keep candidate
+                        # (we will not use it to advance until_date and will rely on post-fetch
+                        # extraction to infer published_at).
                         all_candidates.append(
                             Candidate(
                                 url=url,
@@ -341,7 +375,7 @@ class ForumsDiscoverer:
                                 },
                                 title=title,
                                 snapshot_url=None,
-                                timestamp=ts,
+                                timestamp=ts_aware,
                                 extra={
                                     "forum": {"site": site, "board": board_url},
                                     # Hint to fetcher to bypass robots if discovery already did
@@ -354,11 +388,28 @@ class ForumsDiscoverer:
                                 },
                             )
                         )
+                        # track oldest ts on this page
+                        if ts_aware is not None:
+                            if page_oldest_ts is None or ts_aware < page_oldest_ts:
+                                page_oldest_ts = ts_aware
                         if len(all_candidates) >= cfg.per_board_limit:
                             break
                     if len(all_candidates) >= cfg.per_board_limit:
+                        last_page_visited = page
+                        break
+                    last_page_visited = page
+                    # stop when we paged past the until_date threshold
+                    if (
+                        self.until_date
+                        and page_oldest_ts
+                        and page_oldest_ts < self.until_date
+                    ):
                         break
                     sleep(cfg.pause_between_requests)
+                # record last page visited (for cursor advancement)
+                self.last_board_pages[board_url] = max(
+                    last_page_visited, start_page - 1
+                )
             per_site[site] = all_candidates
             logger.info(
                 "ForumsDiscoverer site=%s discovered=%d", site, len(all_candidates)

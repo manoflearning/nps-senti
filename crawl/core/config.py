@@ -83,6 +83,7 @@ class AutocrawlRoundConfig:
     max_gdelt_windows: int = 1
     max_youtube_windows: int = 1
     max_youtube_keywords: int = 2
+    max_forums_windows: int = 1
 
 
 @dataclass(slots=True)
@@ -251,6 +252,7 @@ def load_config(
                 max_gdelt_windows=int(round_raw.get("max_gdelt_windows", 1)),
                 max_youtube_windows=int(round_raw.get("max_youtube_windows", 1)),
                 max_youtube_keywords=int(round_raw.get("max_youtube_keywords", 2)),
+                max_forums_windows=int(round_raw.get("max_forums_windows", 1)),
             ),
             youtube=AutocrawlYouTubeConfig(
                 daily_quota=int(yt_raw.get("daily_quota", 1000)),

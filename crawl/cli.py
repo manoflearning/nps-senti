@@ -77,6 +77,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-youtube-windows", type=int, help="Max YouTube windows per round"
     )
     ac.add_argument(
+        "--max-forums-windows", type=int, help="Max Forums windows per round"
+    )
+    ac.add_argument(
         "--max-youtube-keywords",
         type=int,
         help="Max YouTube keywords per round (quota-aware)",
@@ -163,6 +166,11 @@ def main(argv: list[str] | None = None) -> int:
                 if args.max_youtube_windows is not None
                 else (acfg.round.max_youtube_windows if acfg and acfg.round else 1)
             )
+            max_forums_windows = (
+                args.max_forums_windows
+                if args.max_forums_windows is not None
+                else (acfg.round.max_forums_windows if acfg and acfg.round else 1)
+            )
             max_youtube_keywords = (
                 args.max_youtube_keywords
                 if args.max_youtube_keywords is not None
@@ -189,6 +197,7 @@ def main(argv: list[str] | None = None) -> int:
                 round_max_fetch=round_max_fetch,
                 max_gdelt_windows=max_gdelt_windows,
                 max_youtube_windows=max_youtube_windows,
+                max_forums_windows=max_forums_windows,
                 max_youtube_keywords=max_youtube_keywords,
                 include_forums=include_forums,
             )
@@ -235,6 +244,11 @@ def main(argv: list[str] | None = None) -> int:
             if args.max_youtube_windows is not None
             else (acfg.round.max_youtube_windows if acfg and acfg.round else 1)
         )
+        max_forums_windows = (
+            args.max_forums_windows
+            if args.max_forums_windows is not None
+            else (acfg.round.max_forums_windows if acfg and acfg.round else 1)
+        )
         max_youtube_keywords = (
             args.max_youtube_keywords
             if args.max_youtube_keywords is not None
@@ -258,6 +272,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_youtube_windows=max_youtube_windows,
                 max_youtube_keywords=max_youtube_keywords,
                 include_forums=include_forums,
+                max_forums_windows=max_forums_windows,
             )
             results.append({"round": i + 1, **stats})
             if i < rounds - 1 and sleep_sec > 0:

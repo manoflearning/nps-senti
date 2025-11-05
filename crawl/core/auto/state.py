@@ -63,6 +63,12 @@ class AutoState:
     youtube: YouTubeQuota = field(default_factory=YouTubeQuota)
     youtube_kw_cursor: int = 0
     last_updated: str = ""
+    # cooldowns["YYYY-MM"]["source"] = remaining rounds to skip
+    cooldowns: Dict[str, Dict[str, int]] = field(default_factory=dict)
+    # rotation cursor for month buckets
+    bucket_cursor: int = 0
+    # forum board cursors: board_url -> next start page
+    forum_cursors: Dict[str, int] = field(default_factory=dict)
 
     @classmethod
     def load(cls, path: Path) -> "AutoState":
@@ -90,6 +96,14 @@ class AutoState:
         )
         state.youtube_kw_cursor = int(data.get("youtube_kw_cursor", 0))
         state.last_updated = str(data.get("last_updated", ""))
+        state.cooldowns = {
+            str(k): {str(sk): int(vv) for sk, vv in v.items()}
+            for k, v in data.get("cooldowns", {}).items()
+        }
+        state.bucket_cursor = int(data.get("bucket_cursor", 0))
+        state.forum_cursors = {
+            str(k): int(v) for k, v in data.get("forum_cursors", {}).items()
+        }
         return state
 
     def save(self, path: Path) -> None:
@@ -105,6 +119,9 @@ class AutoState:
             },
             "youtube_kw_cursor": self.youtube_kw_cursor,
             "last_updated": datetime.now(timezone.utc).isoformat(),
+            "cooldowns": self.cooldowns,
+            "bucket_cursor": self.bucket_cursor,
+            "forum_cursors": self.forum_cursors,
         }
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
@@ -125,3 +142,32 @@ class AutoState:
             int(self.stored_by_source.get(candidate.source, 0)) + 1
         )
         self.last_updated = datetime.now(timezone.utc).isoformat()
+
+    def tick_cooldowns(self) -> None:
+        # Decrement cooldown counters each round
+        for bucket, by_src in list(self.cooldowns.items()):
+            for src, val in list(by_src.items()):
+                if val <= 1:
+                    by_src.pop(src, None)
+                else:
+                    by_src[src] = val - 1
+            if not by_src:
+                self.cooldowns.pop(bucket, None)
+
+    def apply_cooldown(
+        self,
+        bucket: str,
+        source: str,
+        *,
+        stored: int,
+        fetched: int,
+        duplicates_skipped: int,
+        min_stored_threshold: int = 1,
+        max_dup_ratio: float = 0.8,
+        cooldown_rounds: int = 3,
+    ) -> None:
+        total = max(1, fetched + max(0, duplicates_skipped))
+        dup_ratio = duplicates_skipped / total
+        if stored < min_stored_threshold or dup_ratio >= max_dup_ratio:
+            per_src = self.cooldowns.setdefault(bucket, {})
+            per_src[source] = max(per_src.get(source, 0), cooldown_rounds)
