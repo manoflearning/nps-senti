@@ -16,6 +16,7 @@ wheels/
 
 data_raw/
 data_crawl/
+data_crawl_forum_test/
 
 .DS_Store
 **/.DS_Store

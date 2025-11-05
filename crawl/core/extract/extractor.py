@@ -10,6 +10,7 @@ import trafilatura
 import os
 import re
 import requests
+from urllib.parse import parse_qs, urlparse, unquote
 
 from ..models import Candidate, Document, FetchResult
 from ..config import QualityConfig
@@ -71,6 +72,12 @@ class Extractor:
         self.youtube_comments_text_format = (
             fmt if fmt in {"html", "plainText"} else "html"
         )
+
+        # Forums comments fetching knobs
+        # - FORUMS_COMMENTS_ENABLED: enable/disable forums comment collection (default: true)
+        # - FORUMS_COMMENTS_MAX: limit number of comments appended to text/meta (default: 200)
+        self.forums_comments_enabled = _env_bool("FORUMS_COMMENTS_ENABLED", True)
+        self.forums_comments_max = max(0, _env_int("FORUMS_COMMENTS_MAX", 200))
 
     def _fallback_title_from_html(self, html: str) -> Optional[str]:
         if not html:
@@ -185,6 +192,17 @@ class Extractor:
                 extraction = ExtractionResult(
                     text="", title=candidate.title, authors=[], published_at=None
                 )
+            # For forum threads, allow building from comments-only content
+            elif isinstance(candidate.discovered_via, dict) and (
+                candidate.discovered_via.get("type") == "forum"
+            ):
+                extraction = ExtractionResult(
+                    text="",
+                    title=self._fallback_title_from_html(fetch_result.html or "")
+                    or candidate.title,
+                    authors=[],
+                    published_at=None,
+                )
             else:
                 return None, {"status": "extract-failed"}
 
@@ -194,6 +212,18 @@ class Extractor:
                 extraction = self._augment_youtube(candidate, extraction)
             except Exception as exc:  # noqa: BLE001
                 logger.debug("YouTube augmentation failed: %s", exc)
+
+        # Forums comment augmentation
+        try:
+            if self.forums_comments_enabled and isinstance(
+                candidate.discovered_via, dict
+            ):
+                if candidate.discovered_via.get("type") == "forum":
+                    extraction = self._augment_forum(
+                        candidate, extraction, fetch_result
+                    )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Forum augmentation failed: %s", exc)
 
         lang = self._detect_lang(extraction.text)
         quality = self._build_quality(extraction.text, lang)
@@ -380,6 +410,525 @@ class Extractor:
         return ExtractionResult(
             text=text_combined or extraction.text,
             title=title,
+            authors=extraction.authors,
+            published_at=extraction.published_at,
+        )
+
+    # ----------------- Forums helpers -----------------
+    def _clean_ws(self, s: str) -> str:
+        return re.sub(r"\s+", " ", (s or "").strip())
+
+    def _extract_text(self, root, candidates: list[str]) -> str:  # type: ignore[no-untyped-def]
+        for sel in candidates:
+            el = root.select_one(sel)
+            if el:
+                return self._clean_ws(el.get_text(" ", strip=True))
+        return self._clean_ws(root.get_text(" ", strip=True))
+
+    def _extract_attr_or_text(
+        self, root, sel: str, attr: str = "datetime"
+    ) -> Optional[str]:  # type: ignore[no-untyped-def]
+        el = root.select_one(sel)
+        if not el:
+            return None
+        val = el.get(attr)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+        txt = el.get_text(" ", strip=True)
+        return txt.strip() if txt else None
+
+    def _extract_comments_generic(self, soup) -> List[dict]:  # type: ignore[no-untyped-def]
+        items: List[dict] = []
+        containers = [
+            "ul.cmt_list li",
+            "div.cmt_list li",
+            "div.comment_list li",
+            "div.comments li",
+            "#comment li",
+            "#Comment li",
+            "#cmt li",
+            "div#comment .comment",
+            "div#cmt .comment",
+            "li.comment",
+            "div.comment",
+            "div.reply",
+            "li.reply",
+            "div.reple",
+            "li.reple",
+            "table#cmttbl tr",
+        ]
+        seen_texts: set[str] = set()
+        for sel in containers:
+            for node in soup.select(sel):
+                text = self._extract_text(
+                    node,
+                    [
+                        ".cmt_txt",
+                        ".comment_txt",
+                        ".comment-text",
+                        ".comment-content",
+                        ".txt",
+                        ".text",
+                        "p",
+                    ],
+                )
+                if not text or len(text) < 2:
+                    continue
+                # Skip boilerplate
+                if text in {"신고", "삭제", "추천", "비공개"}:
+                    continue
+                if text in seen_texts:
+                    continue
+                seen_texts.add(text)
+                author = self._extract_text(
+                    node,
+                    [
+                        ".nickname",
+                        ".nick",
+                        ".name",
+                        ".writer",
+                        ".author",
+                        ".user",
+                        ".member",
+                        ".ub-writer",
+                    ],
+                )
+                if author:
+                    # Some forums include extra labels inside author
+                    author = self._clean_ws(re.sub(r"\b(익명|관리자)\b", "", author))
+                ts = (
+                    self._extract_attr_or_text(node, "time[datetime]")
+                    or self._extract_attr_or_text(node, "time", "datetime")
+                    or self._extract_attr_or_text(node, ".date", "title")
+                    or self._extract_attr_or_text(node, ".date", "data-time")
+                    or self._extract_attr_or_text(node, ".date", "data-datetime")
+                    or self._extract_attr_or_text(node, ".date")
+                    or self._extract_attr_or_text(node, ".time")
+                )
+                items.append(
+                    {"author": author or None, "text": text, "publishedAt": ts}
+                )
+                if 0 < self.forums_comments_max <= len(items):
+                    return items
+        return items
+
+    def _fetch_comments_dcinside(
+        self,
+        candidate: Candidate,
+        soup,
+    ) -> List[dict]:  # type: ignore[no-untyped-def]
+        e_token = soup.select_one("#e_s_n_o")
+        if not e_token or not e_token.get("value"):
+            return []
+
+        parsed = urlparse(candidate.url or "")
+        query = parse_qs(parsed.query)
+        gall_id = (query.get("id") or [None])[0]
+        article_no = (query.get("no") or [None])[0]
+
+        if not gall_id:
+            forum_meta = (
+                candidate.extra.get("forum")
+                if isinstance(candidate.extra, dict)
+                else {}
+            )
+            board_url = None
+            if isinstance(forum_meta, dict):
+                board_url = forum_meta.get("board")
+            if board_url:
+                board_query = parse_qs(urlparse(str(board_url)).query)
+                gall_id = (board_query.get("id") or [None])[0]
+
+        if not gall_id or not article_no:
+            return []
+
+        board_type = ""
+        board_type_el = soup.select_one("#board_type")
+        if board_type_el and board_type_el.get("value"):
+            board_type = board_type_el.get("value")
+
+        gall_type = ""
+        gall_type_el = soup.select_one("#_GALLTYPE_")
+        if gall_type_el and gall_type_el.get("value"):
+            gall_type = gall_type_el.get("value")
+
+        secret_key = ""
+        secret_key_el = soup.select_one("#secret_article_key")
+        if secret_key_el and secret_key_el.get("value"):
+            secret_key = secret_key_el.get("value")
+
+        data = {
+            "id": gall_id,
+            "no": article_no,
+            "cmt_id": gall_id,
+            "cmt_no": article_no,
+            "focus_cno": "",
+            "focus_pno": "",
+            "e_s_n_o": e_token.get("value"),
+            "comment_page": "1",
+            "sort": "D",
+            "prevCnt": "",
+            "board_type": board_type,
+            "_GALLTYPE_": gall_type,
+            "secret_article_key": secret_key,
+        }
+
+        user_agent = os.environ.get(
+            "CRAWLER_USER_AGENT",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/128.0.0.0 Safari/537.36",
+        )
+
+        session = requests.Session()
+        try:
+            session.get(candidate.url, headers={"User-Agent": user_agent}, timeout=20)
+            resp = session.post(
+                "https://gall.dcinside.com/board/comment/",
+                headers={
+                    "User-Agent": user_agent,
+                    "Referer": candidate.url,
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+                data=data,
+                timeout=20,
+            )
+            resp.raise_for_status()
+            payload = resp.json()
+        except (requests.RequestException, ValueError):
+            return []
+
+        rows = payload.get("comments")
+        if not isinstance(rows, list):
+            return []
+
+        try:
+            from bs4 import BeautifulSoup  # type: ignore
+        except Exception:  # noqa: BLE001
+            BeautifulSoup = None  # type: ignore
+
+        results: List[dict] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            memo_html = row.get("memo") or ""
+            if BeautifulSoup:
+                memo_text = BeautifulSoup(memo_html, "html.parser").get_text(
+                    " ", strip=True
+                )
+            else:
+                memo_text = re.sub(r"<[^>]+>", " ", memo_html)
+            memo_text = self._clean_ws(memo_text)
+            if not memo_text:
+                continue
+            author = row.get("name") or None
+            ip = row.get("ip") or None
+            if author and ip:
+                author_display = f"{author} ({ip})"
+            elif ip and not author:
+                author_display = ip
+            else:
+                author_display = author
+            results.append(
+                {
+                    "author": author_display,
+                    "text": memo_text,
+                    "publishedAt": row.get("reg_date"),
+                    "id": row.get("no"),
+                    "replyTo": row.get("c_no") or None,
+                    "depth": row.get("depth"),
+                }
+            )
+            if 0 < self.forums_comments_max <= len(results):
+                break
+        return results
+
+    def _fetch_comments_bobaedream(
+        self,
+        candidate: Candidate,
+        soup,
+    ) -> List[dict]:  # type: ignore[no-untyped-def]
+        parsed = urlparse(candidate.url or "")
+        query = parse_qs(parsed.query)
+        board_code = query.get("code") or query.get("board")
+        board_code = board_code[0] if board_code else None
+        article_no = query.get("No") or query.get("no")
+        article_no = article_no[0] if article_no else None
+        if not board_code or not article_no:
+            return []
+
+        page_html = soup.decode() if hasattr(soup, "decode") else ""
+
+        tb_match = re.search(r"tb=([A-Za-z0-9_]+)", page_html)
+        wid_match = re.search(r"wid=([^&\"\\]+)", page_html)
+        if not tb_match or not wid_match:
+            return []
+        tb_value = tb_match.group(1)
+        wid_value = unquote(wid_match.group(1))
+
+        user_agent = os.environ.get(
+            "CRAWLER_USER_AGENT",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/128.0.0.0 Safari/537.36",
+        )
+
+        session = requests.Session()
+        try:
+            session.get(candidate.url, headers={"User-Agent": user_agent}, timeout=20)
+            params = {
+                "tb": tb_value,
+                "code": board_code,
+                "No": article_no,
+                "page": "1",
+                "strLimit": "100",
+                "strOrder": "",
+                "strMywrite": "",
+                "focus": "top",
+                "wid": wid_value,
+            }
+            resp = session.get(
+                "https://www.bobaedream.co.kr/board_renew/bulletin/comment_list.php",
+                params=params,
+                headers={"User-Agent": user_agent, "Referer": candidate.url},
+                timeout=20,
+            )
+            resp.raise_for_status()
+            from bs4 import BeautifulSoup  # type: ignore
+
+            comment_soup = BeautifulSoup(resp.text, "html.parser")
+        except (requests.RequestException, ValueError):
+            return []
+        except Exception:  # noqa: BLE001
+            return []
+
+        results: List[dict] = []
+        seen_ids: set[str] = set()
+        for text_node in comment_soup.select("dd[id^=small_cmt_]"):
+            cid_value = text_node.get("id")
+            if not cid_value:
+                continue
+            cid = str(cid_value)
+            numeric_id = cid.split("_")[-1]
+            if numeric_id in seen_ids:
+                continue
+            seen_ids.add(numeric_id)
+            dl = text_node.find_parent("dl")
+            if not dl:
+                continue
+            dt = dl.find("dt")
+            author = None
+            published = None
+            if dt:
+                name = dt.select_one("span.author")
+                author = (
+                    self._clean_ws(name.get_text(" ", strip=True)) if name else None
+                )
+                date_span = dt.select_one("span.date")
+                if date_span and date_span.get_text(strip=True):
+                    published = date_span.get_text(strip=True)
+            text = self._clean_ws(text_node.get_text(" ", strip=True))
+            if not text:
+                continue
+            results.append(
+                {
+                    "author": author,
+                    "text": text,
+                    "publishedAt": published,
+                    "id": numeric_id,
+                    "depth": 0,
+                }
+            )
+            if 0 < self.forums_comments_max <= len(results):
+                break
+
+        return results
+
+    def _fetch_comments_mlbpark(
+        self,
+        candidate: Candidate,
+        soup,
+    ) -> List[dict]:  # type: ignore[no-untyped-def]
+        parsed = urlparse(candidate.url or "")
+        query = parse_qs(parsed.query)
+        board = query.get("b") or query.get("board")
+        board = board[0] if board else None
+        article_id = query.get("id") or query.get("no")
+        article_id = article_id[0] if article_id else None
+        if not board or not article_id:
+            return []
+
+        user_agent = os.environ.get(
+            "CRAWLER_USER_AGENT",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/128.0.0.0 Safari/537.36",
+        )
+
+        session = requests.Session()
+        try:
+            session.get(candidate.url, headers={"User-Agent": user_agent}, timeout=20)
+            resp = session.get(
+                "https://mlbpark.donga.com/mp/b.php",
+                params={"b": board, "id": article_id, "m": "reply"},
+                headers={"User-Agent": user_agent, "Referer": candidate.url},
+                timeout=20,
+            )
+            resp.raise_for_status()
+            from bs4 import BeautifulSoup  # type: ignore
+
+            comment_soup = BeautifulSoup(resp.text, "html.parser")
+        except (requests.RequestException, ValueError):
+            return []
+        except Exception:  # noqa: BLE001
+            return []
+
+        results: List[dict] = []
+        for block in comment_soup.select("div.other_con"):
+            cid_value = block.get("id")
+            if not cid_value:
+                continue
+            cid = str(cid_value)
+            text_span = block.select_one("span.re_txt")
+            if not text_span:
+                continue
+            text = self._clean_ws(text_span.get_text(" ", strip=True))
+            if not text:
+                continue
+            name_span = block.select_one(".txt .name")
+            author = (
+                self._clean_ws(name_span.get_text(" ", strip=True))
+                if name_span
+                else None
+            )
+            date_span = block.select_one(".txt .date")
+            published = (
+                date_span.get_text(strip=True)
+                if date_span and date_span.get_text(strip=True)
+                else None
+            )
+            ip_span = block.select_one(".txt .ip")
+            ip_val = (
+                self._clean_ws(ip_span.get_text(" ", strip=True)) if ip_span else None
+            )
+            if author and ip_val:
+                author_display = f"{author} {ip_val}".strip()
+            else:
+                author_display = author or ip_val
+            results.append(
+                {
+                    "author": author_display,
+                    "text": text,
+                    "publishedAt": published,
+                    "id": cid.replace("reply_", ""),
+                    "depth": 0,
+                }
+            )
+            if 0 < self.forums_comments_max <= len(results):
+                break
+
+        return results
+
+    def _extract_comments_theqoo(self, soup) -> List[dict]:  # type: ignore[no-untyped-def]
+        items: List[dict] = []
+        for node in soup.select("#cmt .comment, #cmt li, div.comment, ul#cmt li"):
+            text = self._extract_text(
+                node, [".comment-content", ".xe_content", "p", ".txt"]
+            )
+            if not text:
+                continue
+            author = self._extract_text(node, [".author", ".nick", ".name", ".writer"])
+            ts = self._extract_attr_or_text(
+                node, "time[datetime]"
+            ) or self._extract_attr_or_text(node, ".date")
+            items.append({"author": author or None, "text": text, "publishedAt": ts})
+            if 0 < self.forums_comments_max <= len(items):
+                break
+        return items
+
+    def _extract_comments_ppomppu(self, soup) -> List[dict]:  # type: ignore[no-untyped-def]
+        items: List[dict] = []
+        for node in soup.select("#comment tr, #Comment tr, .comList tr, .comment tr"):
+            text = self._extract_text(
+                node, [".comContent", ".comment", ".txt", "p", "td"]
+            )
+            if not text:
+                continue
+            author = self._extract_text(
+                node, [".writer", ".nick", ".name", "td.user", ".author"]
+            )
+            ts = (
+                self._extract_attr_or_text(node, "time[datetime]")
+                or self._extract_attr_or_text(node, ".date")
+                or self._extract_attr_or_text(node, ".regdate")
+            )
+            items.append({"author": author or None, "text": text, "publishedAt": ts})
+            if 0 < self.forums_comments_max <= len(items):
+                break
+        return items
+
+    def _augment_forum(
+        self,
+        candidate: Candidate,
+        extraction: ExtractionResult,
+        fetch_result: FetchResult,
+    ) -> ExtractionResult:
+        html = fetch_result.html or ""
+        if not html:
+            return extraction
+        try:
+            from bs4 import BeautifulSoup  # lazy import
+        except Exception:  # noqa: BLE001
+            return extraction
+
+        soup = BeautifulSoup(html, "html.parser")
+
+        site = (candidate.source or "").lower()
+        comments: List[dict] = []
+        try:
+            if site == "dcinside":
+                comments = self._fetch_comments_dcinside(candidate, soup)
+            elif site == "bobaedream":
+                comments = self._fetch_comments_bobaedream(candidate, soup)
+            elif site == "mlbpark":
+                comments = self._fetch_comments_mlbpark(candidate, soup)
+            elif site == "theqoo":
+                comments = self._extract_comments_theqoo(soup)
+            elif site == "ppomppu":
+                comments = self._extract_comments_ppomppu(soup)
+        except Exception:  # noqa: BLE001
+            comments = []
+
+        if not comments and site != "dcinside":
+            comments = self._extract_comments_generic(soup)
+
+        if not comments:
+            return extraction
+
+        # Cap to max allowed
+        if self.forums_comments_max and len(comments) > self.forums_comments_max:
+            comments = comments[: self.forums_comments_max]
+
+        # Combine into text
+        combined_parts: List[str] = []
+        if extraction.text:
+            combined_parts.append(extraction.text)
+        comments_blob = "\n".join(
+            [c.get("text", "") for c in comments if c.get("text")]
+        )
+        if comments_blob.strip():
+            combined_parts.append(comments_blob)
+        text_combined = "\n\n".join([p for p in combined_parts if p and p.strip()])
+
+        # Patch candidate.extra["forum"]["comments"]
+        if isinstance(candidate.extra, dict):
+            forum_meta = candidate.extra.setdefault("forum", {})
+            if isinstance(forum_meta, dict):
+                forum_meta["comments"] = comments
+
+        return ExtractionResult(
+            text=text_combined or extraction.text,
+            title=extraction.title,
             authors=extraction.authors,
             published_at=extraction.published_at,
         )
