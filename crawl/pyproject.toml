@@ -2,7 +2,7 @@
 name = "nps-senti-crawl"
 version = "0.1.0"
 description = "Unified crawler pipeline for nps-senti"
-requires-python = "~=3.13"
+requires-python = ">=3.13.0, <3.14"
 dependencies = [
     "dotenv>=0.9.9",
     "langdetect>=1.0.9",
