@@ -1126,12 +1126,18 @@ class Extractor:
                         cid = None
                         try:
                             parent_div = ln.find_parent(
-                                "div", id=lambda v: isinstance(v, str) and v.startswith("comment_")
+                                "div",
+                                id=lambda v: isinstance(v, str)
+                                and v.startswith("comment_"),
                             )
                             if parent_div and parent_div.get("id"):
                                 _idv = parent_div.get("id")
                                 try:
-                                    _idv_str = _idv[0] if isinstance(_idv, (list, tuple)) else str(_idv)
+                                    _idv_str = (
+                                        _idv[0]
+                                        if isinstance(_idv, (list, tuple))
+                                        else str(_idv)
+                                    )
                                 except Exception:  # noqa: BLE001
                                     _idv_str = None
                                 if _idv_str:
@@ -1151,13 +1157,23 @@ class Extractor:
                         if not text:
                             continue
                         # Author
-                        author = self._extract_text(ln, [".comment_template_depth1_vote b a", "b a", ".name a", ".writer"])
+                        author = self._extract_text(
+                            ln,
+                            [
+                                ".comment_template_depth1_vote b a",
+                                "b a",
+                                ".name a",
+                                ".writer",
+                            ],
+                        )
                         # Timestamp (best-effort: pick first HH:MM:SS in line)
                         ts = None
                         try:
                             import re as _re
 
-                            m = _re.search(r"\b\d{2}:\d{2}:\d{2}\b", ln.get_text(" ", strip=True))
+                            m = _re.search(
+                                r"\b\d{2}:\d{2}:\d{2}\b", ln.get_text(" ", strip=True)
+                            )
                             if m:
                                 ts = m.group(0)
                         except Exception:  # noqa: BLE001
