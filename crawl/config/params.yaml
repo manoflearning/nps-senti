@@ -27,7 +27,7 @@ output:
 crawl:
   run_id: null
 limits:
-  max_candidates_per_source: 50
+  max_candidates_per_source: 10000
   request_timeout_sec: 30
 quality:
   min_keyword_hits: 1
@@ -86,7 +86,7 @@ autocrawl:
   monthly_target_per_source: 1000
   include_forums: true
   round:
-    max_fetch: 300
+    max_fetch: 10000
     max_gdelt_windows: 2
     max_youtube_windows: 1
     max_youtube_keywords: 2
