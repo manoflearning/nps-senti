@@ -3,11 +3,10 @@ name = "nps-senti"
 version = "0.1.0"
 description = ""
 readme = "README.md"
-requires-python = ">=3.13.0, <3.14"
+requires-python = ">=3.13"
 dependencies = [
     "dotenv>=0.9.9",
     "requests>=2.32.5",
-    "nps-senti-crawl",
 ]
 
 [dependency-groups]
@@ -16,6 +15,3 @@ dev = [
     "pytest>=8.4.2",
     "ruff>=0.13.0",
 ]
-
-[tool.uv.sources]
-nps-senti-crawl = { path = "crawl" }
