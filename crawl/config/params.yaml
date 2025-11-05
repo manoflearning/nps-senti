@@ -30,7 +30,7 @@ limits:
   max_candidates_per_source: 50
   request_timeout_sec: 30
 quality:
-  min_keyword_hits: 0
+  min_keyword_hits: 1
 sources:
   gdelt:
     enabled: true
