@@ -22,21 +22,6 @@ keywords:
   - "국 민 연 금"
   - "연금 개혁"
   - "연금 개편"
-allow_domains:
-  - news.naver.com
-  - news.korea
-  - biz.chosun.com
-  - hani.co.kr
-  - yna.co.kr
-  - mk.co.kr
-  - asiatoday.co.kr
-  - yonhapnewstv.co.kr
-  - moneytoday.co.kr
-  - gall.dcinside.com
-  - www.bobaedream.co.kr
-  - mlbpark.donga.com
-  - theqoo.net
-  - www.ppomppu.co.kr
 output:
   root: "data_crawl_forum_test"
   file_name: "crawl"

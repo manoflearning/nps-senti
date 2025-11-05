@@ -74,7 +74,6 @@ class ForumsSourceConfig:
 @dataclass(slots=True)
 class CrawlerConfig:
     keywords: List[str]
-    allow_domains: List[str]
     lang: List[str]
     time_window: TimeWindow
     output: OutputConfig
@@ -95,18 +94,6 @@ def _load_keywords(path: Path) -> List[str]:
             continue
         keywords.append(line)
     return keywords
-
-
-def _load_allow_domains(path: Path) -> List[str]:
-    if not path.exists():
-        return []
-    domains: List[str] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        domains.append(line.lower())
-    return domains
 
 
 def _ensure_run_id(run_id: Optional[str]) -> str:
@@ -140,7 +127,6 @@ def load_config(
         params = yaml.safe_load(fh)
 
     keywords_file = config_dir / "keywords.txt"
-    allow_domains_file = config_dir / "domains_allowlist.txt"
 
     # Prefer inline YAML list if provided; otherwise fallback to file
     keywords_param = params.get("keywords")
@@ -148,14 +134,6 @@ def load_config(
         keywords = [str(k).strip() for k in keywords_param if str(k).strip()]
     else:
         keywords = _load_keywords(keywords_file)
-    # Prefer inline YAML list if provided; otherwise fallback to file
-    allow_domains_param = params.get("allow_domains")
-    if isinstance(allow_domains_param, (list, tuple)) and allow_domains_param:
-        allow_domains = [
-            str(d).strip().lower() for d in allow_domains_param if str(d).strip()
-        ]
-    else:
-        allow_domains = _load_allow_domains(allow_domains_file)
 
     time_window_cfg = params.get("time_window", {})
     start_date = _parse_datetime(time_window_cfg.get("start_date"))
@@ -222,7 +200,6 @@ def load_config(
 
     return CrawlerConfig(
         keywords=keywords,
-        allow_domains=allow_domains,
         lang=lang_list,
         time_window=TimeWindow(start_date=start_date, end_date=end_date),
         output=OutputConfig(root=output_root, file_name=output_file_name),
