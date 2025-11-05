@@ -17,7 +17,6 @@ class TimeWindow:
 @dataclass(slots=True)
 class OutputConfig:
     root: Path
-    file_name: Optional[str] = None
 
 
 @dataclass(slots=True)
@@ -47,13 +46,6 @@ class GdeltSourceConfig:
     enabled: bool = True
     max_concurrency: int = 4
     max_days_back: Optional[int] = None
-
-
-@dataclass(slots=True)
-class CommonCrawlSourceConfig:
-    max_indexes: int
-    per_domain_limit: int
-    pause_between_requests: float
 
 
 @dataclass(slots=True)
@@ -146,7 +138,6 @@ def load_config(
 
     output_cfg = params.get("output", {})
     output_root = Path(output_cfg.get("root", "data_crawl"))
-    output_file_name = output_cfg.get("file_name")
 
     crawl_cfg = params.get("crawl", {})
     run_id = _ensure_run_id(crawl_cfg.get("run_id"))
@@ -202,7 +193,7 @@ def load_config(
         keywords=keywords,
         lang=lang_list,
         time_window=TimeWindow(start_date=start_date, end_date=end_date),
-        output=OutputConfig(root=output_root, file_name=output_file_name),
+        output=OutputConfig(root=output_root),
         runtime=RuntimeParams(run_id=run_id),
         limits=limits,
         quality=quality,

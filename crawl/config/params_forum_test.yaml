@@ -24,7 +24,6 @@ keywords:
   - "연금 개편"
 output:
   root: "data_crawl_forum_test"
-  file_name: "crawl"
 crawl:
   run_id: null
 limits:

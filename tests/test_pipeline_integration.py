@@ -9,7 +9,7 @@ from crawl.core.models import Candidate, FetchResult
 def test_pipeline_runs_with_forum_candidates(tmp_path, monkeypatch):
     # Load base config and redirect output to tmp
     config = load_config()
-    config.output = OutputConfig(root=Path(tmp_path), file_name="ignored_in_split")
+    config.output = OutputConfig(root=Path(tmp_path))
     config.limits.max_candidates_per_source = 10
     # Relax quality for testing
     config.quality.min_keyword_hits = 0
