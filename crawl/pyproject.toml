@@ -18,3 +18,14 @@ dependencies = [
 dev = [
     "pytest>=8.4.2",
 ]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["core*"]
+exclude = ["config"]
+
+[tool.setuptools]
+py-modules = ["cli"]
