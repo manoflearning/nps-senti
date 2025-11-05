@@ -1,0 +1,96 @@
+time_window:
+  start_date: "2025-01-01T00:00:00Z"
+  end_date: null
+lang: ["ko", "en"]
+keywords:
+  - "국민연금"
+  - "국민연금공단"
+  - "연금개혁"
+  - "연금개편"
+  - "연금"
+  - "퇴직연금"
+  - "개인연금"
+  - "연기금"
+  - "기금운용"
+  - "노후준비"
+  - "노후연금"
+  - "National Pension Service"
+  - "NPS Korea"
+  - "Korea National Pension"
+  - "NPS"
+  - "국민 연금"
+  - "국 민 연 금"
+  - "연금 개혁"
+  - "연금 개편"
+output:
+  root: "data_crawl"
+crawl:
+  run_id: null
+limits:
+  max_candidates_per_source: 10000
+  request_timeout_sec: 30
+quality:
+  min_keyword_hits: 1
+sources:
+  gdelt:
+    enabled: true
+    max_records_per_keyword: 90
+    chunk_days: 30
+    overlap_days: 2
+    pause_between_requests: 1.0
+    max_attempts: 3
+    rate_limit_backoff_sec: 5.0
+    max_concurrency: 4
+    max_days_back: 60
+  forums:
+    dcinside:
+      enabled: true
+      boards:
+        - "https://gall.dcinside.com/mgallery/board/lists/?id=pension"
+      max_pages: 10
+      per_board_limit: 120
+      pause_between_requests: 0.6
+    bobaedream:
+      enabled: true
+      boards:
+        - "https://www.bobaedream.co.kr/list?code=freeb"
+      max_pages: 10
+      per_board_limit: 120
+      pause_between_requests: 0.6
+    mlbpark:
+      enabled: true
+      boards:
+        - "https://mlbpark.donga.com/mp/b.php?b=bullpen"
+      max_pages: 10
+      per_board_limit: 120
+      pause_between_requests: 0.6
+      obey_robots: false
+    theqoo:
+      enabled: true
+      boards:
+        - "https://theqoo.net/square"
+      max_pages: 10
+      per_board_limit: 120
+      pause_between_requests: 0.6
+    ppomppu:
+      enabled: true
+      boards:
+        - "https://www.ppomppu.co.kr/zboard/zboard.php?id=freeboard"
+      max_pages: 10
+      per_board_limit: 120
+      pause_between_requests: 0.6
+
+autocrawl:
+  enabled: true
+  months_back: 120
+  monthly_target_per_source: 1000
+  include_forums: true
+  round:
+    max_fetch: 10000
+    max_gdelt_windows: 2
+    max_youtube_windows: 1
+    max_youtube_keywords: 2
+  youtube:
+    # Quota is small for free keys; stay conservative
+    daily_quota: 0
+    reserve_quota: 0
