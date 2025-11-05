@@ -74,6 +74,31 @@ class CrawlerConfig:
     quality: QualityConfig
     gdelt: GdeltSourceConfig
     forums: ForumsSourceConfig = field(default_factory=ForumsSourceConfig)
+    autocrawl: "AutocrawlConfig | None" = None
+
+
+@dataclass(slots=True)
+class AutocrawlRoundConfig:
+    max_fetch: Optional[int] = None
+    max_gdelt_windows: int = 1
+    max_youtube_windows: int = 1
+    max_youtube_keywords: int = 2
+
+
+@dataclass(slots=True)
+class AutocrawlYouTubeConfig:
+    daily_quota: int = 1000
+    reserve_quota: int = 200
+
+
+@dataclass(slots=True)
+class AutocrawlConfig:
+    enabled: bool = False
+    months_back: int = 12
+    monthly_target_per_source: int = 60
+    include_forums: bool = True
+    round: AutocrawlRoundConfig = field(default_factory=AutocrawlRoundConfig)
+    youtube: AutocrawlYouTubeConfig = field(default_factory=AutocrawlYouTubeConfig)
 
 
 def _load_keywords(path: Path) -> List[str]:
@@ -189,6 +214,52 @@ def load_config(
             )
     forums = ForumsSourceConfig(sites=forums_sites)
 
+    # Autocrawl
+    auto_cfg_raw = params.get("autocrawl") or {}
+    autocrawl: AutocrawlConfig | None
+    if isinstance(auto_cfg_raw, dict) and auto_cfg_raw:
+        round_raw = (
+            auto_cfg_raw.get("round", {})
+            if isinstance(auto_cfg_raw.get("round", {}), dict)
+            else {}
+        )
+        yt_raw = (
+            auto_cfg_raw.get("youtube", {})
+            if isinstance(auto_cfg_raw.get("youtube", {}), dict)
+            else {}
+        )
+        raw_max_fetch = round_raw.get("max_fetch")
+        mf: Optional[int]
+        if isinstance(raw_max_fetch, int):
+            mf = raw_max_fetch
+        elif isinstance(raw_max_fetch, str):
+            try:
+                mf = int(raw_max_fetch)
+            except ValueError:
+                mf = None
+        else:
+            mf = None
+        autocrawl = AutocrawlConfig(
+            enabled=bool(auto_cfg_raw.get("enabled", False)),
+            months_back=int(auto_cfg_raw.get("months_back", 12)),
+            monthly_target_per_source=int(
+                auto_cfg_raw.get("monthly_target_per_source", 60)
+            ),
+            include_forums=bool(auto_cfg_raw.get("include_forums", True)),
+            round=AutocrawlRoundConfig(
+                max_fetch=mf,
+                max_gdelt_windows=int(round_raw.get("max_gdelt_windows", 1)),
+                max_youtube_windows=int(round_raw.get("max_youtube_windows", 1)),
+                max_youtube_keywords=int(round_raw.get("max_youtube_keywords", 2)),
+            ),
+            youtube=AutocrawlYouTubeConfig(
+                daily_quota=int(yt_raw.get("daily_quota", 1000)),
+                reserve_quota=int(yt_raw.get("reserve_quota", 200)),
+            ),
+        )
+    else:
+        autocrawl = None
+
     return CrawlerConfig(
         keywords=keywords,
         lang=lang_list,
@@ -199,4 +270,5 @@ def load_config(
         quality=quality,
         gdelt=gdelt,
         forums=forums,
+        autocrawl=autocrawl,
     )

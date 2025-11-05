@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from typing import Dict, List, cast
+from typing import Callable, Dict, Iterable, List, Mapping, Optional, cast
 
 import requests
 from dotenv import load_dotenv
@@ -17,7 +17,7 @@ from .discovery.youtube import YouTubeDiscoverer
 from .discovery.forums import ForumsDiscoverer
 from .extract.extractor import Extractor
 from .fetch.fetcher import Fetcher
-from .models import Candidate
+from .models import Candidate, Document
 from .storage.index import DocumentIndex
 from .storage.writer import MultiSourceJsonlWriter
 from .utils import normalize_url
@@ -46,6 +46,8 @@ class UnifiedPipeline:
         include_sources: set[str] | None = None,
         forum_sites_filter: set[str] | None = None,
         max_fetch: int | None = None,
+        store_observer: Optional[Callable[["Document", "Candidate"], None]] = None,
+        source_keyword_filter: Optional[Mapping[str, Iterable[str]]] = None,
     ) -> None:
         self.config = config
         # Optional limiter to run only selected sources
@@ -55,6 +57,8 @@ class UnifiedPipeline:
         self.forum_sites_filter = forum_sites_filter
         # Optional cap on number of fetch attempts in this run
         self.max_fetch = max_fetch if (max_fetch is None or max_fetch > 0) else None
+        # Optional observer invoked when a document is stored
+        self.store_observer = store_observer
         self.session = requests.Session()
         retry = Retry(
             total=3,
@@ -79,6 +83,8 @@ class UnifiedPipeline:
         # Write to per-source JSONL files
         self.storage = MultiSourceJsonlWriter(config.output.root)
         self.index = DocumentIndex(self.storage.output_dir)
+        # Optional per-source keyword filter (e.g., limit YouTube keywords to save quota)
+        self._source_keyword_filter = source_keyword_filter
 
     def _trim_candidates(self, candidates: List[Candidate]) -> List[Candidate]:
         max_total = self.config.limits.max_candidates_per_source
@@ -98,7 +104,11 @@ class UnifiedPipeline:
         if _should_run("gdelt") and getattr(self.config.gdelt, "enabled", True):
             gdelt = GdeltDiscoverer(
                 session=self.session,
-                keywords=self.config.keywords,
+                keywords=list(
+                    self._source_keyword_filter.get("gdelt", self.config.keywords)  # type: ignore[union-attr]
+                    if self._source_keyword_filter is not None
+                    else self.config.keywords
+                ),
                 languages=self.config.lang,
                 start_date=self.config.time_window.start_date,
                 end_date=self.config.time_window.end_date,
@@ -119,7 +129,11 @@ class UnifiedPipeline:
         if _should_run("youtube"):
             yt = YouTubeDiscoverer(
                 api_key=os.environ.get("YOUTUBE_API_KEY"),
-                keywords=self.config.keywords,
+                keywords=list(
+                    self._source_keyword_filter.get("youtube", self.config.keywords)  # type: ignore[union-attr]
+                    if self._source_keyword_filter is not None
+                    else self.config.keywords
+                ),
                 start_date=self.config.time_window.start_date,
                 end_date=self.config.time_window.end_date,
             )
@@ -245,6 +259,13 @@ class UnifiedPipeline:
             self.index.add(document.id)
             self.index.add_url(document.url)
             stored += 1
+            # Notify observer for per-document accounting (e.g., for auto-crawl state)
+            if self.store_observer is not None:
+                try:
+                    self.store_observer(document, candidate)
+                except Exception:  # noqa: BLE001
+                    # Observer failures must not break the pipeline
+                    pass
 
         stats = PipelineStats(
             discovered={k: len(v) for k, v in discovered.items()},

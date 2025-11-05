@@ -72,10 +72,25 @@ sources:
       max_pages: 1
       per_board_limit: 120
       pause_between_requests: 0.6
-    ppomppu:
-      enabled: true
-      boards:
-        - "https://www.ppomppu.co.kr/zboard/zboard.php?id=freeboard"
-      max_pages: 1
-      per_board_limit: 120
-      pause_between_requests: 0.6
+  ppomppu:
+    enabled: true
+    boards:
+      - "https://www.ppomppu.co.kr/zboard/zboard.php?id=freeboard"
+    max_pages: 1
+    per_board_limit: 120
+    pause_between_requests: 0.6
+
+autocrawl:
+  enabled: true
+  months_back: 120
+  monthly_target_per_source: 1000
+  include_forums: true
+  round:
+    max_fetch: 300
+    max_gdelt_windows: 2
+    max_youtube_windows: 1
+    max_youtube_keywords: 2
+  youtube:
+    # Quota is small for free keys; stay conservative
+    daily_quota: 0
+    reserve_quota: 0
