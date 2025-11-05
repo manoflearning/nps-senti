@@ -1,4 +1,5 @@
-from crawl.core.discovery.forums import ForumsDiscoverer, ForumSiteConfig
+from crawl.core.discovery.forums import ForumsDiscoverer
+from crawl.core.config import ForumSiteConfig
 
 
 class DummyResp:

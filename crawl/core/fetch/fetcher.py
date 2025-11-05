@@ -137,9 +137,6 @@ class Fetcher:
         if not self.config.allow_live_fetch:
             return None
         # Allow per-candidate override to bypass robots (opt-in via config)
-        if not getattr(candidate.extra or {}, "get", None):
-            # extra is a dict; continue to check normally below
-            pass
         override = False
         try:
             override = bool((candidate.extra or {}).get("robots_override", False))

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass, field
 from datetime import datetime
 from time import sleep
 from typing import Any, Dict, List, Mapping, Optional, Tuple, Callable
@@ -18,19 +17,12 @@ from ..fetch.fetcher import RobotsCache
 logger = logging.getLogger(__name__)
 
 
-@dataclass(slots=True)
-class ForumSiteConfig:
-    enabled: bool = True
-    boards: List[str] = field(default_factory=list)  # list of listing URLs
-    max_pages: int = 1
-    per_board_limit: int = 50
-    pause_between_requests: float = 0.5
-    obey_robots: bool = True
+"""Forums discovery for configured sites.
 
-    def __post_init__(self) -> None:
-        self.max_pages = max(1, int(self.max_pages))
-        self.per_board_limit = max(1, int(self.per_board_limit))
-        self.pause_between_requests = max(0.0, float(self.pause_between_requests))
+This module intentionally avoids defining a site config dataclass here because
+site configuration is defined and parsed in crawl.core.config. We accept an
+opaque mapping of site->config objects and read attributes dynamically.
+"""
 
 
 def _update_query_param(url: str, key: str, value: str) -> str:
@@ -218,8 +210,25 @@ class ForumsDiscoverer:
     ) -> List[Tuple[str, Optional[str], Dict[str, Optional[str]]]]:
         soup = BeautifulSoup(html, "html.parser")
         items: List[Tuple[str, Optional[str], Dict[str, Optional[str]]]] = []
-        for a in soup.select('a[href*="/zboard/view.php?id="]'):
+        # Current board id from listing URL (e.g., id=freeboard)
+        current_board: Optional[str] = None
+        try:
+            parsed = urlparse(base_url)
+            qs = dict(parse_qsl(parsed.query, keep_blank_values=True))
+            current_board = qs.get("id")
+        except Exception:  # noqa: BLE001
+            current_board = None
+        for a in soup.select('a[href*="view.php?id="]'):
             href = self._get_href(a) or ""
+            # Keep only links that point to the same board id as the listing
+            try:
+                inner = urlparse(urljoin(base_url, href))
+                qs = dict(parse_qsl(inner.query, keep_blank_values=True))
+                link_board = qs.get("id")
+            except Exception:  # noqa: BLE001
+                link_board = None
+            if current_board and link_board and link_board != current_board:
+                continue
             url = urljoin(base_url, href)
             title = a.get_text(strip=True) or None
             tr = a.find_parent("tr")

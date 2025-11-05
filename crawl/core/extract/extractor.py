@@ -79,6 +79,15 @@ class Extractor:
         self.forums_comments_enabled = _env_bool("FORUMS_COMMENTS_ENABLED", True)
         self.forums_comments_max = max(0, _env_int("FORUMS_COMMENTS_MAX", 200))
 
+        # Optional cookies for sites that gate comment APIs
+        self.theqoo_cookies = os.environ.get("THEQOO_COOKIES")
+        self.ppomppu_cookies = os.environ.get("PPOMPPU_COOKIES")
+        # Optional login credentials for auto session refresh
+        self.theqoo_id = os.environ.get("THEQOO_ID")
+        self.theqoo_pw = os.environ.get("THEQOO_PW")
+        self.ppomppu_id = os.environ.get("PPOMPPU_ID")
+        self.ppomppu_pw = os.environ.get("PPOMPPU_PW")
+
     def _fallback_title_from_html(self, html: str) -> Optional[str]:
         if not html:
             return None
@@ -829,43 +838,508 @@ class Extractor:
 
         return results
 
-    def _extract_comments_theqoo(self, soup) -> List[dict]:  # type: ignore[no-untyped-def]
-        items: List[dict] = []
-        for node in soup.select("#cmt .comment, #cmt li, div.comment, ul#cmt li"):
-            text = self._extract_text(
-                node, [".comment-content", ".xe_content", "p", ".txt"]
-            )
-            if not text:
-                continue
-            author = self._extract_text(node, [".author", ".nick", ".name", ".writer"])
-            ts = self._extract_attr_or_text(
-                node, "time[datetime]"
-            ) or self._extract_attr_or_text(node, ".date")
-            items.append({"author": author or None, "text": text, "publishedAt": ts})
-            if 0 < self.forums_comments_max <= len(items):
-                break
-        return items
+    def _fetch_comments_theqoo(
+        self,
+        candidate: Candidate,
+        soup,
+    ) -> List[dict]:  # type: ignore[no-untyped-def]
+        # Parse mid and document id from URL path: /{mid}/{document_srl}
+        try:
+            parsed = urlparse(candidate.url or "")
+            parts = [p for p in parsed.path.split("/") if p]
+            mid = parts[-2] if len(parts) >= 2 else None
+            doc_id = parts[-1] if parts else None
+        except Exception:  # noqa: BLE001
+            mid = None
+            doc_id = None
+        if not mid or not doc_id:
+            return []
 
-    def _extract_comments_ppomppu(self, soup) -> List[dict]:  # type: ignore[no-untyped-def]
-        items: List[dict] = []
-        for node in soup.select("#comment tr, #Comment tr, .comList tr, .comment tr"):
+        # Hit the public HTML partial for comments
+        user_agent = os.environ.get(
+            "CRAWLER_USER_AGENT",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/128.0.0.0 Safari/537.36",
+        )
+        session = requests.Session()
+        try:
+            base_headers = {"User-Agent": user_agent}
+            if self.theqoo_cookies:
+                base_headers["Cookie"] = self.theqoo_cookies
+            session.get(candidate.url, headers=base_headers, timeout=20)
+            resp = session.get(
+                "https://theqoo.net/index.php",
+                params={
+                    "module": "board",
+                    "act": "dispBoardContentCommentList",
+                    "mid": mid,
+                    "document_srl": doc_id,
+                },
+                headers={
+                    **base_headers,
+                    "Referer": candidate.url,
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+                timeout=20,
+            )
+            if resp.status_code >= 400:
+                # Try login once if credentials are available
+                if self._maybe_login_theqoo(session):
+                    resp = session.get(
+                        "https://theqoo.net/index.php",
+                        params={
+                            "module": "board",
+                            "act": "dispBoardContentCommentList",
+                            "mid": mid,
+                            "document_srl": doc_id,
+                        },
+                        headers={
+                            **base_headers,
+                            "Referer": candidate.url,
+                            "X-Requested-With": "XMLHttpRequest",
+                        },
+                        timeout=20,
+                    )
+                    if resp.status_code >= 400:
+                        return []
+                else:
+                    return []
+            from bs4 import BeautifulSoup  # type: ignore
+
+            c_soup = BeautifulSoup(resp.text, "html.parser")
+        except Exception:  # noqa: BLE001
+            return []
+
+        selectors = [
+            "#cmtPosition li.fdb_itm",
+            "ul.bd_lst_cmt li",
+            "ul.reply li",
+            "div.bd_cmt li",
+            "article.xe_comment",
+            "li.fdb_itm",
+        ]
+        nodes = []
+        for sel in selectors:
+            nodes = c_soup.select(sel)
+            if nodes:
+                break
+        if not nodes:
+            # If no nodes found, try logging in once and retry
+            if self._maybe_login_theqoo(session):
+                try:
+                    resp = session.get(
+                        "https://theqoo.net/index.php",
+                        params={
+                            "module": "board",
+                            "act": "dispBoardContentCommentList",
+                            "mid": mid,
+                            "document_srl": doc_id,
+                        },
+                        headers={
+                            "User-Agent": user_agent,
+                            "Referer": candidate.url,
+                            "X-Requested-With": "XMLHttpRequest",
+                        },
+                        timeout=20,
+                    )
+                    if resp.status_code < 400:
+                        from bs4 import BeautifulSoup  # type: ignore
+
+                        c_soup = BeautifulSoup(resp.text, "html.parser")
+                        for sel in selectors:
+                            nodes = c_soup.select(sel)
+                            if nodes:
+                                break
+                except Exception:  # noqa: BLE001
+                    nodes = []
+        if not nodes:
+            return []
+
+        results: List[dict] = []
+        for node in nodes:
             text = self._extract_text(
-                node, [".comContent", ".comment", ".txt", "p", "td"]
+                node,
+                [
+                    ".xe_content",
+                    ".xe_comment",
+                    ".bd_cmt",
+                    ".fdb_cont",
+                    ".comment-content",
+                    "p",
+                ],
             )
             if not text:
                 continue
             author = self._extract_text(
-                node, [".writer", ".nick", ".name", "td.user", ".author"]
+                node, [".author", ".nick", ".name", ".writer", "strong.name", "a.nick"]
             )
-            ts = (
-                self._extract_attr_or_text(node, "time[datetime]")
-                or self._extract_attr_or_text(node, ".date")
-                or self._extract_attr_or_text(node, ".regdate")
-            )
-            items.append({"author": author or None, "text": text, "publishedAt": ts})
-            if 0 < self.forums_comments_max <= len(items):
+            ts = self._extract_attr_or_text(
+                node, "time[datetime]"
+            ) or self._extract_attr_or_text(node, ".date")
+            results.append({"author": author or None, "text": text, "publishedAt": ts})
+            if 0 < self.forums_comments_max <= len(results):
                 break
+        return results
+
+    def _maybe_login_theqoo(self, session: requests.Session) -> bool:
+        if not (self.theqoo_id and self.theqoo_pw):
+            return False
+        try:
+            ua = os.environ.get(
+                "CRAWLER_USER_AGENT",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/128.0.0.0 Safari/537.36",
+            )
+            # Fetch home to obtain CSRF token
+            home = session.get(
+                "https://theqoo.net/",
+                headers={"User-Agent": ua},
+                timeout=20,
+            )
+            token = None
+            try:
+                from bs4 import BeautifulSoup  # type: ignore
+
+                hs = BeautifulSoup(home.text, "html.parser")
+                meta = hs.find("meta", attrs={"name": "csrf-token"})
+                if meta and meta.get("content"):
+                    token = meta.get("content")
+            except Exception:  # noqa: BLE001
+                token = None
+
+            headers = {
+                "User-Agent": ua,
+                "Referer": "https://theqoo.net/",
+                "X-Requested-With": "XMLHttpRequest",
+            }
+            if token:
+                headers["X-CSRF-Token"] = str(token)  # Rhymix token
+
+            params = {"module": "member", "act": "procMemberLogin"}
+            data = {
+                "user_id": self.theqoo_id,
+                "password": self.theqoo_pw,
+                "keep_signed": "Y",
+            }
+            resp = session.post(
+                "https://theqoo.net/index.php",
+                params=params,
+                data=data,
+                headers=headers,
+                timeout=20,
+            )
+            if resp.status_code >= 400:
+                return False
+            # Heuristic: presence of login status cookies implies success
+            ck = session.cookies.get_dict()
+            if "rx_login_status" in ck or "xe_logged" in ck:
+                return True
+        except requests.RequestException:
+            return False
+        return False
+
+    def _fetch_comments_ppomppu(
+        self,
+        candidate: Candidate,
+        soup,
+    ) -> List[dict]:  # type: ignore[no-untyped-def]
+        items: List[dict] = []
+        containers = [
+            "#comment tr",
+            "#Comment tr",
+            ".comList tr",
+            "table#comment_table tr",
+            "div.comment tr",
+            "div#divComment tr",
+        ]
+        for sel in containers:
+            for node in soup.select(sel):
+                text = self._extract_text(
+                    node, [".comContent", ".comment", ".txt", "p", "td"]
+                )
+                if not text:
+                    continue
+                author = self._extract_text(
+                    node, [".writer", ".nick", ".name", "td.user", ".author"]
+                )
+                ts = (
+                    self._extract_attr_or_text(node, "time[datetime]")
+                    or self._extract_attr_or_text(node, ".date")
+                    or self._extract_attr_or_text(node, ".regdate")
+                )
+                items.append(
+                    {"author": author or None, "text": text, "publishedAt": ts}
+                )
+                if 0 < self.forums_comments_max <= len(items):
+                    return items
+            if items:
+                return items
+
+        # Attempt partial endpoints used by some skins
+        try:
+            parsed = urlparse(candidate.url or "")
+            query = parse_qs(parsed.query)
+            board = (query.get("id") or [None])[0]
+            no = (query.get("no") or query.get("No") or [None])[0]
+            if not board or not no:
+                return []
+            user_agent = os.environ.get(
+                "CRAWLER_USER_AGENT",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/128.0.0.0 Safari/537.36",
+            )
+            session = requests.Session()
+            base_headers = {"User-Agent": user_agent}
+            if self.ppomppu_cookies:
+                base_headers["Cookie"] = self.ppomppu_cookies
+            session.get(candidate.url, headers=base_headers, timeout=20)
+            from bs4 import BeautifulSoup  # type: ignore
+
+            # 1) comment.php (primary)
+            def _try_comment_php() -> List[dict]:
+                out: List[dict] = []
+                try:
+                    resp = session.get(
+                        "https://www.ppomppu.co.kr/zboard/comment.php",
+                        params={
+                            "id": board,
+                            "no": no,
+                            "c_page": "1",
+                            "comment_mode": "sort_desc",
+                        },
+                        headers={
+                            **base_headers,
+                            "Referer": candidate.url,
+                            "X-Requested-With": "XMLHttpRequest",
+                        },
+                        timeout=20,
+                    )
+                    if resp.status_code >= 400 or not resp.text:
+                        return out
+                    c_soup = BeautifulSoup(resp.text, "html.parser")
+                    # Each comment line
+                    for ln in c_soup.select("div.comment_line, div.comment_line2"):
+                        # Identify comment id
+                        cid = None
+                        try:
+                            parent_div = ln.find_parent(
+                                "div", id=lambda v: isinstance(v, str) and v.startswith("comment_")
+                            )
+                            if parent_div and parent_div.get("id"):
+                                _idv = parent_div.get("id")
+                                try:
+                                    _idv_str = _idv[0] if isinstance(_idv, (list, tuple)) else str(_idv)
+                                except Exception:  # noqa: BLE001
+                                    _idv_str = None
+                                if _idv_str:
+                                    cid = _idv_str.replace("comment_", "").strip()
+                        except Exception:  # noqa: BLE001
+                            cid = None
+                        # Extract text
+                        text = ""
+                        if cid:
+                            tgt = c_soup.select_one(f"#commentContent_{cid}")
+                            if tgt:
+                                text = self._clean_ws(tgt.get_text(" ", strip=True))
+                        if not text:
+                            text = self._extract_text(
+                                ln, [".mid-text-area", ".comment", ".txt", "p", "div"]
+                            )
+                        if not text:
+                            continue
+                        # Author
+                        author = self._extract_text(ln, [".comment_template_depth1_vote b a", "b a", ".name a", ".writer"])
+                        # Timestamp (best-effort: pick first HH:MM:SS in line)
+                        ts = None
+                        try:
+                            import re as _re
+
+                            m = _re.search(r"\b\d{2}:\d{2}:\d{2}\b", ln.get_text(" ", strip=True))
+                            if m:
+                                ts = m.group(0)
+                        except Exception:  # noqa: BLE001
+                            ts = None
+                        depth = 1 if "comment_line2" in (ln.get("class") or []) else 0
+                        out.append(
+                            {
+                                "author": author or None,
+                                "text": text,
+                                "publishedAt": ts,
+                                **({"id": cid} if cid else {}),
+                                "depth": depth,
+                            }
+                        )
+                        if 0 < self.forums_comments_max <= len(out):
+                            return out
+                except requests.RequestException:
+                    return out
+                return out
+
+            items.extend(_try_comment_php())
+            if items:
+                return items
+
+            for url, params in [
+                (
+                    "https://www.ppomppu.co.kr/zboard/_comment_list.php",
+                    {"id": board, "no": no, "page": "1"},
+                ),
+                (
+                    "https://www.ppomppu.co.kr/zboard/bbs_comment.php",
+                    {"id": board, "no": no, "page": "1"},
+                ),
+            ]:
+                try:
+                    resp = session.get(
+                        url,
+                        params=params,
+                        headers={
+                            **base_headers,
+                            "Referer": candidate.url,
+                            "X-Requested-With": "XMLHttpRequest",
+                        },
+                        timeout=15,
+                    )
+                    if resp.status_code >= 400 or not resp.text:
+                        continue
+                    c_soup = BeautifulSoup(resp.text, "html.parser")
+                    for node in c_soup.select(".comList tr, tr"):
+                        text = self._extract_text(
+                            node, [".comContent", ".comment", ".txt", "p", "td"]
+                        )
+                        if not text:
+                            continue
+                        author = self._extract_text(
+                            node,
+                            [".writer", ".nick", ".name", "td.user", ".author"],
+                        )
+                        ts = (
+                            self._extract_attr_or_text(node, "time[datetime]")
+                            or self._extract_attr_or_text(node, ".date")
+                            or self._extract_attr_or_text(node, ".regdate")
+                        )
+                        items.append(
+                            {
+                                "author": author or None,
+                                "text": text,
+                                "publishedAt": ts,
+                            }
+                        )
+                        if 0 < self.forums_comments_max <= len(items):
+                            return items
+                    if items:
+                        return items
+                except requests.RequestException:
+                    continue
+            # If still empty, try logging in once and retry endpoints
+            if not items and self._maybe_login_ppomppu(session, candidate.url):
+                # Try comment.php again after login
+                items.extend(_try_comment_php())
+                if items:
+                    return items
+                for url, params in [
+                    (
+                        "https://www.ppomppu.co.kr/zboard/_comment_list.php",
+                        {"id": board, "no": no, "page": "1"},
+                    ),
+                    (
+                        "https://www.ppomppu.co.kr/zboard/bbs_comment.php",
+                        {"id": board, "no": no, "page": "1"},
+                    ),
+                ]:
+                    try:
+                        resp = session.get(
+                            url,
+                            params=params,
+                            headers={
+                                **base_headers,
+                                "Referer": candidate.url,
+                                "X-Requested-With": "XMLHttpRequest",
+                            },
+                            timeout=15,
+                        )
+                        if resp.status_code >= 400 or not resp.text:
+                            continue
+                        c_soup = BeautifulSoup(resp.text, "html.parser")
+                        for node in c_soup.select(".comList tr, tr"):
+                            text = self._extract_text(
+                                node, [".comContent", ".comment", ".txt", "p", "td"]
+                            )
+                            if not text:
+                                continue
+                            author = self._extract_text(
+                                node,
+                                [".writer", ".nick", ".name", "td.user", ".author"],
+                            )
+                            ts = (
+                                self._extract_attr_or_text(node, "time[datetime]")
+                                or self._extract_attr_or_text(node, ".date")
+                                or self._extract_attr_or_text(node, ".regdate")
+                            )
+                            items.append(
+                                {
+                                    "author": author or None,
+                                    "text": text,
+                                    "publishedAt": ts,
+                                }
+                            )
+                            if 0 < self.forums_comments_max <= len(items):
+                                return items
+                        if items:
+                            return items
+                    except requests.RequestException:
+                        continue
+        except Exception:  # noqa: BLE001
+            return items
+
         return items
+
+    def _maybe_login_ppomppu(self, session: requests.Session, referer_url: str) -> bool:
+        if not (self.ppomppu_id and self.ppomppu_pw):
+            return False
+        try:
+            ua = os.environ.get(
+                "CRAWLER_USER_AGENT",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/128.0.0.0 Safari/537.36",
+            )
+            resp = session.get(
+                "https://www.ppomppu.co.kr/zboard/login.php",
+                headers={"User-Agent": ua, "Referer": referer_url},
+                timeout=20,
+            )
+            s_url = referer_url or "/"
+            try:
+                from bs4 import BeautifulSoup  # type: ignore
+
+                lp = BeautifulSoup(resp.text, "html.parser")
+                hidden = lp.find("input", attrs={"name": "s_url"})
+                if hidden and hidden.get("value"):
+                    s_url = hidden.get("value")
+            except Exception:  # noqa: BLE001
+                pass
+            data = {
+                "user_id": self.ppomppu_id,
+                "password": self.ppomppu_pw,
+                "s_url": s_url,
+            }
+            resp2 = session.post(
+                "https://www.ppomppu.co.kr/zboard/login_check.php",
+                data=data,
+                headers={"User-Agent": ua, "Referer": referer_url},
+                timeout=20,
+                allow_redirects=True,
+            )
+            if resp2.status_code >= 400:
+                return False
+            # Heuristic: any cookie set/change implies success; real validation occurs on subsequent request
+            return True if session.cookies.get_dict() else False
+        except requests.RequestException:
+            return False
 
     def _augment_forum(
         self,
@@ -893,9 +1367,9 @@ class Extractor:
             elif site == "mlbpark":
                 comments = self._fetch_comments_mlbpark(candidate, soup)
             elif site == "theqoo":
-                comments = self._extract_comments_theqoo(soup)
+                comments = self._fetch_comments_theqoo(candidate, soup)
             elif site == "ppomppu":
-                comments = self._extract_comments_ppomppu(soup)
+                comments = self._fetch_comments_ppomppu(candidate, soup)
         except Exception:  # noqa: BLE001
             comments = []
 
