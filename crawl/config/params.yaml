@@ -92,5 +92,5 @@ autocrawl:
     max_youtube_keywords: 2
   youtube:
     # Quota is small for free keys; stay conservative
-    daily_quota: 0
-    reserve_quota: 0
+    daily_quota: 1000
+    reserve_quota: 200

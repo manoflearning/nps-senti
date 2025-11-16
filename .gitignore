@@ -16,6 +16,7 @@ wheels/
 
 data_raw/
 data_crawl/
+data_preprocessed/
 
 .DS_Store
 **/.DS_Store
