@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, cast
 
@@ -188,6 +189,128 @@ class Extractor:
             "keyword_hits": keyword_hits,
         }
 
+    def _parse_datetime_loose(self, s: str) -> Optional[datetime]:
+        if not s:
+            return None
+        cleaned = re.sub(r"\([^)]*\)", " ", s)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        patterns = [
+            (
+                r"(?P<y4>\d{4})[./-](?P<m>\d{1,2})[./-](?P<d>\d{1,2})"
+                r"(?:\s+(?P<h>\d{1,2}):(?P<min>\d{2})(?::(?P<s>\d{2}))?)?"
+            ),
+            (
+                r"(?P<y2>\d{2})[./-](?P<m>\d{1,2})[./-](?P<d>\d{1,2})"
+                r"(?:\s+(?P<h>\d{1,2}):(?P<min>\d{2})(?::(?P<s>\d{2}))?)?"
+            ),
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, cleaned)
+            if not match:
+                continue
+            y_str = match.group("y4") or match.group("y2")
+            if not y_str:
+                continue
+            year = int(y_str)
+            if match.group("y2"):
+                year = year + 2000 if year < 70 else year + 1900
+            try:
+                month = int(match.group("m"))
+                day = int(match.group("d"))
+                hour = int(match.group("h")) if match.group("h") else 0
+                minute = int(match.group("min")) if match.group("min") else 0
+                second = int(match.group("s")) if match.group("s") else 0
+                return datetime(year, month, day, hour, minute, second)
+            except ValueError:
+                continue
+        return None
+
+    def _iter_datetimes_from_text(self, text: str) -> List[datetime]:
+        if not text:
+            return []
+        cleaned = re.sub(r"\s+", " ", text)
+        results: List[datetime] = []
+        seen: set[str] = set()
+        patterns = [
+            (
+                r"(?P<y4>\d{4})[./-](?P<m>\d{1,2})[./-](?P<d>\d{1,2})"
+                r"(?:\s+(?P<h>\d{1,2}):(?P<min>\d{2})(?::(?P<s>\d{2}))?)?"
+            ),
+            (
+                r"(?P<y2>\d{2})[./-](?P<m>\d{1,2})[./-](?P<d>\d{1,2})"
+                r"(?:\s+(?P<h>\d{1,2}):(?P<min>\d{2})(?::(?P<s>\d{2}))?)?"
+            ),
+        ]
+        for pattern in patterns:
+            for match in re.finditer(pattern, cleaned):
+                y_str = match.group("y4") or match.group("y2")
+                if not y_str:
+                    continue
+                year = int(y_str)
+                if match.group("y2"):
+                    year = year + 2000 if year < 70 else year + 1900
+                try:
+                    month = int(match.group("m"))
+                    day = int(match.group("d"))
+                    hour = int(match.group("h")) if match.group("h") else 0
+                    minute = int(match.group("min")) if match.group("min") else 0
+                    second = int(match.group("s")) if match.group("s") else 0
+                    dt = datetime(year, month, day, hour, minute, second)
+                except ValueError:
+                    continue
+                key = dt.isoformat()
+                if key in seen:
+                    continue
+                seen.add(key)
+                results.append(dt)
+        return results
+
+    def _normalize_published_at(self, value: Optional[str]) -> Optional[str]:
+        if not value or not isinstance(value, str):
+            return None
+        dt = self._parse_datetime_loose(value)
+        return dt.isoformat() if dt else None
+
+    def _infer_forum_published_at(
+        self,
+        candidate: Candidate,
+        extraction: ExtractionResult,
+        fetch_result: FetchResult,
+    ) -> Optional[str]:
+        if not (
+            isinstance(candidate.discovered_via, dict)
+            and candidate.discovered_via.get("type") == "forum"
+        ):
+            return None
+
+        dt_candidates: List[datetime] = []
+        for payload in (extraction.text, fetch_result.html):
+            if not payload:
+                continue
+            dt_candidates.extend(self._iter_datetimes_from_text(payload))
+
+        forum_meta = (
+            candidate.extra.get("forum") if isinstance(candidate.extra, dict) else None
+        )
+        if isinstance(forum_meta, dict):
+            comments = forum_meta.get("comments")
+            if isinstance(comments, list):
+                for comment in comments:
+                    if not isinstance(comment, dict):
+                        continue
+                    ts = comment.get("publishedAt") or comment.get("published_at")
+                    if not ts:
+                        continue
+                    dt = self._parse_datetime_loose(str(ts))
+                    if dt:
+                        dt_candidates.append(dt)
+
+        if not dt_candidates:
+            return None
+
+        dt_best = max(dt_candidates)
+        return dt_best.isoformat()
+
     def build_document(
         self,
         candidate: Candidate,
@@ -247,9 +370,11 @@ class Extractor:
         # Exact-duplicate guard: ID derives only from normalized URL
         doc_id = sha1_hex(url_norm)
 
-        published_at = extraction.published_at
-        if published_at and isinstance(published_at, str) and len(published_at) < 10:
-            published_at = None
+        published_at = self._normalize_published_at(extraction.published_at)
+        if not published_at:
+            published_at = self._infer_forum_published_at(
+                candidate, extraction, fetch_result
+            )
         if not published_at and candidate.timestamp:
             published_at = candidate.timestamp.isoformat()
 

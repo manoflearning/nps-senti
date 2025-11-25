@@ -100,6 +100,25 @@ def test_bobaedream_parser_view_pattern():
     # fmkorea support removed
 
 
+def test_bobaedream_parser_two_digit_year_datetime():
+    html = """
+    <table><tbody>
+      <tr>
+        <td class="tit"><a class="bsubject" href="/view?code=freeb&No=321">두자리연도</a></td>
+        <td class="author">작성자</td>
+        <td class="date">25.11.16 09:56</td>
+      </tr>
+    </tbody></table>
+    """
+    session = DummySession({})
+    d = build_forums(session, "bobaedream", html)
+    items = d.discover()["bobaedream"]
+    assert items and items[0].timestamp is not None
+    ts = items[0].timestamp
+    assert ts.year == 2025
+    assert ts.month == 11 and ts.day == 16
+
+
 def test_mlbpark_parser_basic():
     html = """
     <table><tbody>
