@@ -110,54 +110,64 @@ def plan_round(
         "forums": [],
     }
 
-    # Choose up to N windows per source from top-deficit buckets
-    for bucket in ranked:
-        # skip buckets under cooldown for a source
-        cool = state.cooldowns.get(bucket, {})
-        if (
-            len(windows["gdelt"]) < max_gdelt_windows
-            and deficits[bucket]["gdelt"] > 0
-            and not cool.get("gdelt")
-        ):
-            # month window
-            year, month = map(int, bucket.split("-"))
-            start = datetime(year, month, 1, tzinfo=timezone.utc)
-            end = _next_month(start)
-            if end > now:
-                end = now
-            if end > start:
-                windows["gdelt"].append((start, end))
-        if (
-            len(windows["youtube"]) < max_youtube_windows
-            and deficits[bucket]["youtube"] > 0
-            and not cool.get("youtube")
-        ):
-            year, month = map(int, bucket.split("-"))
-            start = datetime(year, month, 1, tzinfo=timezone.utc)
-            end = _next_month(start)
-            if end > now:
-                end = now
-            if end > start:
-                windows["youtube"].append((start, end))
-        if (
-            include_forums
-            and len(windows["forums"]) < max_forums_windows
-            and deficits[bucket]["forums"] > 0
-            and not cool.get("forums")
-        ):
-            year, month = map(int, bucket.split("-"))
-            start = datetime(year, month, 1, tzinfo=timezone.utc)
-            end = _next_month(start)
-            if end > now:
-                end = now
-            if end > start:
-                windows["forums"].append((start, end))
-        if (
-            len(windows["gdelt"]) >= max_gdelt_windows
-            and len(windows["youtube"]) >= max_youtube_windows
-            and (not include_forums or len(windows["forums"]) >= 1)
-        ):
-            break
+    def _bucket_window(bucket: str) -> Tuple[datetime, datetime]:
+        year, month = map(int, bucket.split("-"))
+        start = datetime(year, month, 1, tzinfo=timezone.utc)
+        end = _next_month(start)
+        if end > now:
+            end = now
+        return start, end
+
+    # Track how many sources already claimed a bucket this round to prevent
+    # every source from dogpiling the same month.
+    bucket_use: Dict[str, int] = {}
+    # Slightly offset rotation per source for variety
+    source_offsets = {"gdelt": 0, "youtube": 1, "forums": 2}
+
+    def _pick_windows_for_source(
+        source: str, max_windows: int, include_source: bool = True
+    ) -> List[Tuple[datetime, datetime]]:
+        if not include_source or max_windows <= 0 or not ranked:
+            return []
+        offset = source_offsets.get(source, 0)
+        start_idx = (cursor + offset) % len(ranked)
+        rotated = ranked[start_idx:] + ranked[:start_idx]
+        chosen: List[Tuple[datetime, datetime]] = []
+
+        def _iter_candidates(pref_cap: int | None):
+            for bucket in rotated:
+                if deficits[bucket][source] <= 0:
+                    continue
+                if state.cooldowns.get(bucket, {}).get(source):
+                    continue
+                if pref_cap is not None and bucket_use.get(bucket, 0) >= pref_cap:
+                    continue
+                start, end = _bucket_window(bucket)
+                if end <= start:
+                    continue
+                yield bucket, start, end
+
+        # First pass: avoid sharing the same bucket across sources (cap 1)
+        for bucket, start, end in _iter_candidates(pref_cap=1):
+            chosen.append((start, end))
+            bucket_use[bucket] = bucket_use.get(bucket, 0) + 1
+            if len(chosen) >= max_windows:
+                return chosen
+
+        # Second pass: allow reuse if we still need windows
+        for bucket, start, end in _iter_candidates(pref_cap=None):
+            chosen.append((start, end))
+            bucket_use[bucket] = bucket_use.get(bucket, 0) + 1
+            if len(chosen) >= max_windows:
+                break
+
+        return chosen
+
+    windows["gdelt"] = _pick_windows_for_source("gdelt", max_gdelt_windows, True)
+    windows["youtube"] = _pick_windows_for_source("youtube", max_youtube_windows, True)
+    windows["forums"] = _pick_windows_for_source(
+        "forums", max_forums_windows, include_forums
+    )
 
     # Determine YouTube keywords subset under quota
     yt_keywords_all = [kw for kw in base_config.keywords if kw.strip()]

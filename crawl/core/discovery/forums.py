@@ -431,6 +431,15 @@ class ForumsDiscoverer:
             "%Y-%m-%d",
             "%Y.%m.%d",
             "%Y/%m/%d",
+            "%y-%m-%d %H:%M:%S",
+            "%y-%m-%d %H:%M",
+            "%y.%m.%d %H:%M:%S",
+            "%y.%m.%d %H:%M",
+            "%y/%m/%d %H:%M:%S",
+            "%y/%m/%d %H:%M",
+            "%y-%m-%d",
+            "%y.%m.%d",
+            "%y/%m/%d",
         ):
             try:
                 return datetime.strptime(s, fmt)

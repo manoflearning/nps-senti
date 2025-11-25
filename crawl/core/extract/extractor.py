@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, cast
+from typing import Dict, Iterable, List, Optional, Tuple, cast
 
 from langdetect import DetectorFactory, LangDetectException, detect
 import trafilatura
@@ -188,6 +189,172 @@ class Extractor:
             "keyword_hits": keyword_hits,
         }
 
+    def _parse_datetime_loose(self, s: str) -> Optional[datetime]:
+        if not s:
+            return None
+        cleaned = re.sub(r"\([^)]*\)", " ", s)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        iso_try = cleaned.replace("Z", "+00:00")
+        try:
+            return datetime.fromisoformat(iso_try)
+        except Exception:
+            pass
+        patterns = [
+            (
+                r"(?P<y4>\d{4})[./-](?P<m>\d{1,2})[./-](?P<d>\d{1,2})"
+                r"(?:\s+(?P<h>\d{1,2}):(?P<min>\d{2})(?::(?P<s>\d{2}))?)?"
+            ),
+            (
+                r"(?P<y2>\d{2})[./-](?P<m>\d{1,2})[./-](?P<d>\d{1,2})"
+                r"(?:\s+(?P<h>\d{1,2}):(?P<min>\d{2})(?::(?P<s>\d{2}))?)?"
+            ),
+            (
+                r"(?P<y4t>\d{4})(?P<mt>\d{2})(?P<dt>\d{2})T(?P<ht>\d{2})(?P<mint>\d{2})(?P<st>\d{2})Z?"
+            ),
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, cleaned)
+            if not match:
+                continue
+            groups = match.groupdict()
+            y_str = groups.get("y4") or groups.get("y2") or groups.get("y4t")
+            if not y_str:
+                continue
+            year = int(y_str)
+            if groups.get("y2"):
+                year = year + 2000 if year < 70 else year + 1900
+            try:
+                month = int(groups.get("m") or groups.get("mt") or 0)
+                day = int(groups.get("d") or groups.get("dt") or 0)
+                hour = int(groups.get("h") or groups.get("ht") or 0)
+                minute = int(groups.get("min") or groups.get("mint") or 0)
+                second = int(groups.get("s") or groups.get("st") or 0)
+                return datetime(year, month, day, hour, minute, second)
+            except ValueError:
+                continue
+        return None
+
+    def _iter_datetimes_from_text(self, text: str) -> List[Tuple[datetime, bool]]:
+        if not text:
+            return []
+        cleaned = re.sub(r"\s+", " ", text)
+        results: List[Tuple[datetime, bool]] = []
+        seen: set[Tuple[str, bool]] = set()
+        patterns = [
+            (
+                r"(?P<y4>\d{4})[./-](?P<m>\d{1,2})[./-](?P<d>\d{1,2})"
+                r"(?:\s+(?P<h>\d{1,2}):(?P<min>\d{2})(?::(?P<s>\d{2}))?)?"
+            ),
+            (
+                r"(?P<y2>\d{2})[./-](?P<m>\d{1,2})[./-](?P<d>\d{1,2})"
+                r"(?:\s+(?P<h>\d{1,2}):(?P<min>\d{2})(?::(?P<s>\d{2}))?)?"
+            ),
+        ]
+        for pattern in patterns:
+            for match in re.finditer(pattern, cleaned):
+                groups = match.groupdict()
+                y_str = groups.get("y4") or groups.get("y2")
+                if not y_str:
+                    continue
+                year = int(y_str)
+                if groups.get("y2"):
+                    year = year + 2000 if year < 70 else year + 1900
+                try:
+                    month = int(groups.get("m") or 0)
+                    day = int(groups.get("d") or 0)
+                    hour = int(groups.get("h") or 0)
+                    minute = int(groups.get("min") or 0)
+                    second = int(groups.get("s") or 0)
+                    dt = datetime(year, month, day, hour, minute, second)
+                except ValueError:
+                    continue
+                has_time = bool(groups.get("h"))
+                key = (dt.isoformat(), has_time)
+                if key in seen:
+                    continue
+                seen.add(key)
+                results.append((dt, has_time))
+        return results
+
+    def _normalize_published_at(self, value: Optional[str]) -> Optional[str]:
+        if not value or not isinstance(value, str):
+            return None
+        dt = self._parse_datetime_loose(value)
+        return dt.isoformat() if dt else None
+
+    def _infer_forum_published_at(
+        self,
+        candidate: Candidate,
+        extraction: ExtractionResult,
+        fetch_result: FetchResult,
+    ) -> Optional[str]:
+        if not (
+            isinstance(candidate.discovered_via, dict)
+            and candidate.discovered_via.get("type") == "forum"
+        ):
+            return None
+
+        dt_candidates: List[Tuple[datetime, bool]] = []
+
+        site = (candidate.source or "").lower()
+
+        if site == "dcinside" and fetch_result.html:
+            try:
+                from bs4 import BeautifulSoup  # type: ignore
+
+                soup = BeautifulSoup(fetch_result.html, "html.parser")
+                selector_hits: List[Tuple[datetime, bool]] = []
+                for el in soup.select(
+                    "span.gall_date, td.gall_date, div.gall_date, span.date, span.write_time"
+                ):
+                    raw_attr = el.get("title")
+                    raw_text = el.get_text(" ", strip=True)
+                    raw = raw_attr if isinstance(raw_attr, str) else raw_text
+                    if not raw:
+                        continue
+                    dt = self._parse_datetime_loose(raw)
+                    if not dt:
+                        continue
+                    selector_hits.append((dt, ":" in raw))
+                if selector_hits:
+                    # Prefer the first explicit metadata timestamp for dcinside
+                    return selector_hits[0][0].isoformat()
+                dt_candidates.extend(selector_hits)
+            except Exception:  # noqa: BLE001
+                pass
+
+        for payload in (extraction.text, fetch_result.html):
+            if not payload:
+                continue
+            dt_candidates.extend(self._iter_datetimes_from_text(payload))
+
+        forum_meta = (
+            candidate.extra.get("forum") if isinstance(candidate.extra, dict) else None
+        )
+        if isinstance(forum_meta, dict):
+            comments = forum_meta.get("comments")
+            if isinstance(comments, list):
+                for comment in comments:
+                    if not isinstance(comment, dict):
+                        continue
+                    ts = comment.get("publishedAt") or comment.get("published_at")
+                    if not ts:
+                        continue
+                    dt = self._parse_datetime_loose(str(ts))
+                    if dt:
+                        has_time = ":" in str(ts)
+                        dt_candidates.append((dt, has_time))
+
+        if not dt_candidates:
+            return None
+
+        dt_with_time = [dt for dt, has_time in dt_candidates if has_time]
+        if dt_with_time:
+            chosen = max(dt_with_time)
+        else:
+            chosen = max(dt for dt, _ in dt_candidates)
+        return chosen.isoformat()
+
     def build_document(
         self,
         candidate: Candidate,
@@ -247,9 +414,11 @@ class Extractor:
         # Exact-duplicate guard: ID derives only from normalized URL
         doc_id = sha1_hex(url_norm)
 
-        published_at = extraction.published_at
-        if published_at and isinstance(published_at, str) and len(published_at) < 10:
-            published_at = None
+        published_at = self._normalize_published_at(extraction.published_at)
+        if not published_at:
+            published_at = self._infer_forum_published_at(
+                candidate, extraction, fetch_result
+            )
         if not published_at and candidate.timestamp:
             published_at = candidate.timestamp.isoformat()
 
@@ -341,7 +510,13 @@ class Extractor:
                     resp = requests.get(url, params=params, timeout=20)
                     if resp.status_code >= 400:
                         break
-                    data = resp.json()
+                    try:
+                        data = resp.json()
+                    except ValueError:
+                        logger.debug(
+                            "YouTube comments response not JSON for video=%s", video_id
+                        )
+                        break
                     for item in data.get("items", []):
                         top = (
                             item.get("snippet", {})
