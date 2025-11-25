@@ -9,6 +9,7 @@ import json
 
 # ---------- 데이터 모델 ----------
 
+
 @dataclass
 class RawComment:
     text: str
@@ -22,12 +23,13 @@ class RawPost:
     forum_dcinside.jsonl 한 줄을 구조화한 형태.
     extra.forum.comments 에서 댓글들을 가져온다.
     """
+
     id: str
     source: str
     title: str
     lang: str
-    published_at: str          # 게시 시각(있을 수도, 없을 수도 있음)
-    crawl_fetched_at: str      # 크롤링 시각(대체값)
+    published_at: str  # 게시 시각(있을 수도, 없을 수도 있음)
+    crawl_fetched_at: str  # 크롤링 시각(대체값)
     raw_text: str
     comments: List[RawComment]
     extra: Dict[str, Any]
@@ -46,17 +48,18 @@ class FlattenedRecord:
         * 본문 레코드   → None
         * 댓글 레코드   → 0,1,2,...
     """
+
     id: str
     source: str
-    doc_type: str                  # "post" or "comment"
-    parent_id: Optional[str]       # 댓글이면 원글 id, 본문이면 None
-    title: str                     # 클린 제목
+    doc_type: str  # "post" or "comment"
+    parent_id: Optional[str]  # 댓글이면 원글 id, 본문이면 None
+    title: str  # 클린 제목
     lang: str
-    published_at: Optional[str]    # "YYYY-MM-DDTHH:MM:SS+00:00"
+    published_at: Optional[str]  # "YYYY-MM-DDTHH:MM:SS+00:00"
     comment_index: Optional[int]
     comment_text: Optional[str]
     comment_publishedAt: Optional[str]  # "YYYY-MM-DD HH:MM:SS"
-    combined_text: str                 # 제목 + (선택적으로 댓글 내용)
+    combined_text: str  # 제목 + (선택적으로 댓글 내용)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -75,6 +78,7 @@ class FlattenedRecord:
 
 
 # ---------- 입력: 원본 JSONL → RawPost ----------
+
 
 def load_raw_posts(path: str | Path) -> Iterator[RawPost]:
     """
@@ -109,8 +113,7 @@ def load_raw_posts(path: str | Path) -> Iterator[RawPost]:
                     text = c.get("text") or ""
                     published_raw = c.get("publishedAt") or ""
                     meta = {
-                        k: v for k, v in c.items()
-                        if k not in ("text", "publishedAt")
+                        k: v for k, v in c.items() if k not in ("text", "publishedAt")
                     }
                     comments.append(
                         RawComment(
@@ -139,6 +142,7 @@ def load_raw_posts(path: str | Path) -> Iterator[RawPost]:
 
 
 # ---------- 출력: FlattenedRecord → JSONL ----------
+
 
 def write_flattened_jsonl(path: str | Path, records: Iterable[FlattenedRecord]) -> None:
     """

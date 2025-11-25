@@ -12,12 +12,14 @@ logger = logging.getLogger(__name__)
 
 # ---------- 데이터 모델 ----------
 
+
 @dataclass
 class RawGdeltArticle:
     """
     gdelt.jsonl 한 줄을 구조화한 원본 모델.
     (원본 필드는 넉넉하게 들고 있고, 실제로 무엇을 쓸지는 stage2에서 결정)
     """
+
     id: str
     source: str
     lang: str
@@ -27,11 +29,11 @@ class RawGdeltArticle:
 
     # 날짜 관련
     published_at: Optional[str]
-    seendate: Optional[str]          # discovered_via.seendate 또는 extra.gdelt.seendate
+    seendate: Optional[str]  # discovered_via.seendate 또는 extra.gdelt.seendate
 
     # 도메인/국가
-    domain: Optional[str]            # extra.gdelt.domain
-    sourcecountry: Optional[str]     # extra.gdelt.sourcecountry
+    domain: Optional[str]  # extra.gdelt.domain
+    sourcecountry: Optional[str]  # extra.gdelt.sourcecountry
 
     # 품질/길이 등
     quality_length: Optional[int]
@@ -52,6 +54,7 @@ class FlattenedGdeltArticle:
 
     따라서 to_dict()에는 포함하지 않음.
     """
+
     id: str
     source: str
     lang: str
@@ -59,10 +62,10 @@ class FlattenedGdeltArticle:
     title: str
     text: str
 
-    published_at: Optional[str]      # seendate 기반으로 채운 최종 시각
+    published_at: Optional[str]  # seendate 기반으로 채운 최종 시각
     sourcecountry: Optional[str]
 
-    length: int                      # text 길이(문자 기준)
+    length: int  # text 길이(문자 기준)
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -82,6 +85,7 @@ class FlattenedGdeltArticle:
 
 
 # ---------- 입력: 안전 JSON 로더 ----------
+
 
 def load_raw_gdelt(path: str | Path) -> Iterator[RawGdeltArticle]:
     """
@@ -164,7 +168,10 @@ def load_raw_gdelt(path: str | Path) -> Iterator[RawGdeltArticle]:
 
 # ---------- 출력: Flattened → JSONL ----------
 
-def write_flattened_jsonl(path: str | Path, records: Iterable[FlattenedGdeltArticle]) -> None:
+
+def write_flattened_jsonl(
+    path: str | Path, records: Iterable[FlattenedGdeltArticle]
+) -> None:
     """
     FlattenedGdeltArticle 이터러블을 JSONL 로 저장.
     상위 디렉터리가 없으면 자동 생성.

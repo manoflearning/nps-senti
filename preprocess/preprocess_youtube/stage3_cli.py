@@ -6,7 +6,11 @@ import logging
 from pathlib import Path
 from typing import List, Optional
 
-from .stage1_models_io import load_raw_youtube, write_flattened_jsonl, FlattenedYoutubeVideo
+from .stage1_models_io import (
+    load_raw_youtube,
+    write_flattened_jsonl,
+    FlattenedYoutubeVideo,
+)
 from .stage2_transform import flatten_video, deduplicate_records
 
 
@@ -82,14 +86,18 @@ def preprocess_youtube(
         flattened.append(rec)
         kept += 1
 
-    logger.info("[INFO] YouTube 원본 %d개 중 %d개 유지 (언어/길이 필터 적용)", total, kept)
+    logger.info(
+        "[INFO] YouTube 원본 %d개 중 %d개 유지 (언어/길이 필터 적용)", total, kept
+    )
 
     # ----- 중복 제거 -----
     deduped = deduplicate_records(flattened)
 
     # ----- 저장 -----
     write_flattened_jsonl(out_path, deduped)
-    logger.info("[INFO] 최종 YouTube 전처리 결과: %s (총 %d개 레코드)", out_path, len(deduped))
+    logger.info(
+        "[INFO] 최종 YouTube 전처리 결과: %s (총 %d개 레코드)", out_path, len(deduped)
+    )
 
 
 def main(argv: List[str] | None = None) -> None:

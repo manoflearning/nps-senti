@@ -6,7 +6,11 @@ import logging
 from pathlib import Path
 from typing import List, Optional, Set
 
-from .stage1_models_io import load_raw_gdelt, write_flattened_jsonl, RawGdeltArticle, FlattenedGdeltArticle
+from .stage1_models_io import (
+    load_raw_gdelt,
+    write_flattened_jsonl,
+    FlattenedGdeltArticle,
+)
 from .stage2_transform import flatten_article, deduplicate_records
 
 
@@ -55,7 +59,12 @@ def preprocess_gdelt(
 
     logger.info("[INFO] GDELT 입력: %s", in_path)
     logger.info("[INFO] GDELT 출력: %s", out_path)
-    logger.info("[INFO] min_length=%s, max_length=%s, lang_filter=%s", min_length, max_length, lang_set)
+    logger.info(
+        "[INFO] min_length=%s, max_length=%s, lang_filter=%s",
+        min_length,
+        max_length,
+        lang_set,
+    )
 
     raw_iter = load_raw_gdelt(in_path)
 

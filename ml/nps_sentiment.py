@@ -18,11 +18,12 @@ class SentimentResult:
     - label: "부정" / "중립" / "긍정" / "무관"
     - explanation: 한국어 한~두 줄 설명
     """
+
     is_related: bool
     negative: float
     neutral: float
     positive: float
-    label: str          # "부정" / "중립" / "긍정" / "무관"
+    label: str  # "부정" / "중립" / "긍정" / "무관"
     explanation: str
 
     def to_dict(self) -> Dict[str, Any]:
@@ -101,7 +102,9 @@ def _extract_json(text: str) -> Dict[str, Any]:
     raise ValueError(f"JSON 객체를 찾을 수 없음: {text[:200]}")
 
 
-def _renormalize_probs(neg: float, neu: float, pos: float) -> tuple[float, float, float]:
+def _renormalize_probs(
+    neg: float, neu: float, pos: float
+) -> tuple[float, float, float]:
     """
     음수는 0으로 클리핑한 뒤 합을 1로 정규화하고,
     다시 0.XX 형식(두 자리 소수)으로 만들면서
