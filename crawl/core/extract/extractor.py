@@ -208,18 +208,19 @@ class Extractor:
             match = re.search(pattern, cleaned)
             if not match:
                 continue
-            y_str = match.group("y4") or match.group("y2")
+            groups = match.groupdict()
+            y_str = groups.get("y4") or groups.get("y2")
             if not y_str:
                 continue
             year = int(y_str)
-            if match.group("y2"):
+            if groups.get("y2"):
                 year = year + 2000 if year < 70 else year + 1900
             try:
-                month = int(match.group("m"))
-                day = int(match.group("d"))
-                hour = int(match.group("h")) if match.group("h") else 0
-                minute = int(match.group("min")) if match.group("min") else 0
-                second = int(match.group("s")) if match.group("s") else 0
+                month = int(groups.get("m") or 0)
+                day = int(groups.get("d") or 0)
+                hour = int(groups.get("h") or 0)
+                minute = int(groups.get("min") or 0)
+                second = int(groups.get("s") or 0)
                 return datetime(year, month, day, hour, minute, second)
             except ValueError:
                 continue
@@ -243,18 +244,19 @@ class Extractor:
         ]
         for pattern in patterns:
             for match in re.finditer(pattern, cleaned):
-                y_str = match.group("y4") or match.group("y2")
+                groups = match.groupdict()
+                y_str = groups.get("y4") or groups.get("y2")
                 if not y_str:
                     continue
                 year = int(y_str)
-                if match.group("y2"):
+                if groups.get("y2"):
                     year = year + 2000 if year < 70 else year + 1900
                 try:
-                    month = int(match.group("m"))
-                    day = int(match.group("d"))
-                    hour = int(match.group("h")) if match.group("h") else 0
-                    minute = int(match.group("min")) if match.group("min") else 0
-                    second = int(match.group("s")) if match.group("s") else 0
+                    month = int(groups.get("m") or 0)
+                    day = int(groups.get("d") or 0)
+                    hour = int(groups.get("h") or 0)
+                    minute = int(groups.get("min") or 0)
+                    second = int(groups.get("s") or 0)
                     dt = datetime(year, month, day, hour, minute, second)
                 except ValueError:
                     continue
