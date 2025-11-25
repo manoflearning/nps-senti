@@ -1,3 +1,4 @@
+# ml/grok_sentiment_cli.py
 from __future__ import annotations
 
 import argparse
@@ -26,30 +27,10 @@ class TextAndMeta:
     meta: Dict[str, Any]
 
 
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
-
-import logging
-
-logger = logging.getLogger(__name__)
-
-
-@dataclass
-class TextAndMeta:
-    text: str
-    meta: Dict[str, Any]
-
-
 def extract_text_and_meta(obj: Dict[str, Any]) -> TextAndMeta:
     """
-    다양한 소스(dcinside, mlbpark, bobaedream, youtube, gdelt, etc.)를 공통 포맷으로 맞춰서
+    다양한 소스(dcinside, bobaedream, youtube, gdelt, etc.)를 공통 포맷으로 맞춰서
     GrokClient.analyze_sentiment 에 넘기기 위한 텍스트와 메타데이터를 만든다.
-
-    ✅ 규칙 정리
-    - dcinside, mlbpark:
-      * doc_type == "post"    → 제목만 사용
-      * doc_type == "comment" → 제목 + 댓글(comment_text) 사용
-    - 그 외 소스는 기존 combined_text / text_clean / text / title 우선순위 유지
     """
     source = obj.get("source") or ""
     lang = obj.get("lang") or None
@@ -66,48 +47,17 @@ def extract_text_and_meta(obj: Dict[str, Any]) -> TextAndMeta:
         else:
             doc_type = "post"
 
-    # ---------- 1) dcinside / mlbpark 전용 규칙 ----------
-    if source in ("dcinside", "mlbpark") and doc_type in ("post", "comment"):
-        title = (obj.get("title") or "").strip()
-        comment_text = (obj.get("comment_text") or "").strip()
-
-        text_special = ""
-        if doc_type == "post":
-            # 게시글: 제목만 사용
-            text_special = title
-        elif doc_type == "comment":
-            # 댓글: 제목 + 댓글
-            if title and comment_text:
-                text_special = f"{title}\n\n{comment_text}"
-            elif comment_text:
-                text_special = comment_text
-            else:
-                text_special = title
-
-        if text_special:
-            meta: Dict[str, Any] = {
-                "id": identifier,
-                "source": source,
-                "doc_type": doc_type,
-                "lang": lang,
-                "published_at": published_at,
-            }
-            return TextAndMeta(text=text_special, meta=meta)
-        # 제목/댓글이 둘 다 비어 있는 극단적 케이스면 아래 일반 로직으로 폴백
-
-    # ---------- 2) 일반 포맷(기존 로직) ----------
-
     text_candidates: List[Optional[str]] = []
 
-    # 2-1) 포럼류(보배 등): combined_text
+    # 1) 포럼류(디시, 보배 등): combined_text
     if "combined_text" in obj:
         text_candidates.append(obj.get("combined_text"))
 
-    # 2-2) 이전 버전 전처리: text_clean
+    # 2) 이전 버전 전처리: text_clean
     if "text_clean" in obj:
         text_candidates.append(obj.get("text_clean"))
 
-    # 2-3) 유튜브 (minimal): title + description
+    # 3) 유튜브 (최신 minimal 버전): title + description 조합
     if source == "youtube":
         title = (obj.get("title") or "").strip()
         desc = (obj.get("description") or "").strip()
@@ -116,7 +66,7 @@ def extract_text_and_meta(obj: Dict[str, Any]) -> TextAndMeta:
         elif title:
             text_candidates.append(title)
 
-    # 2-4) GDELT 기사: title + text
+    # 🔥 4) GDELT 기사: title + text 조합
     if source == "gdelt":
         title = (obj.get("title") or "").strip()
         body = (obj.get("text") or "").strip()
@@ -125,16 +75,16 @@ def extract_text_and_meta(obj: Dict[str, Any]) -> TextAndMeta:
         elif body:
             text_candidates.append(body)
 
-    # 2-5) 댓글만 있는 경우: comment_text
+    # 5) 댓글만 있는 경우: comment_text
     if "comment_text" in obj:
         text_candidates.append(obj.get("comment_text"))
 
-    # 2-6) 일반 텍스트 필드: text, body, content
+    # 6) 일반 기사/텍스트: text, body, content 등
     for key in ("text", "body", "content"):
         if key in obj:
             text_candidates.append(obj.get(key))
 
-    # 2-7) 그래도 없으면: title만이라도
+    # 7) 그래도 없으면: title만이라도
     if "title" in obj:
         text_candidates.append(obj.get("title"))
 
@@ -157,7 +107,7 @@ def extract_text_and_meta(obj: Dict[str, Any]) -> TextAndMeta:
         "published_at": published_at,
     }
 
-    # GDELT의 sourcecountry 메타 유지
+    # 🔥 GDELT의 sourcecountry도 메타에 포함
     if "sourcecountry" in obj and obj.get("sourcecountry"):
         meta["sourcecountry"] = obj.get("sourcecountry")
 

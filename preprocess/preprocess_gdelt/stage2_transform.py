@@ -1,3 +1,4 @@
+# preprocess/preprocess_gdelt/stage2_transform.py
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -19,6 +20,7 @@ def choose_published_at(
 ) -> Optional[str]:
     """
     최종 published_at 문자열 선택.
+
     우선순위:
       1. published_at (있고 파싱 가능하면)
       2. seendate (예: 20251115T150000Z)
@@ -125,6 +127,7 @@ def clean_text(raw_text: str) -> str:
 def deduplicate_records(records: List[FlattenedGdeltArticle]) -> List[FlattenedGdeltArticle]:
     """
     GDELT 기사 중복 제거.
+
     기준:
       - key = id (있으면)
       - id가 비어 있으면 (사실상 거의 없겠지만) title+sourcecountry 조합 사용

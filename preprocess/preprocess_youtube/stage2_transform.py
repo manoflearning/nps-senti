@@ -1,3 +1,4 @@
+# preprocess/preprocess_youtube/stage2_transform.py
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -19,6 +20,7 @@ def choose_published_at(
 ) -> Tuple[Optional[str], Optional[str]]:
     """
     최종 published_at 문자열과 그 출처를 선택한다.
+
     우선순위:
       1. 상위 published_at
       2. snippet.publishedAt

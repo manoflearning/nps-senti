@@ -1,3 +1,4 @@
+# preprocess/preprocess_dcinside/stage3_cli.py
 from __future__ import annotations
 
 import argparse
@@ -15,6 +16,7 @@ def preprocess_dcinside(
 ) -> None:
     """
     forum_dcinside.jsonl → (본문+댓글+시간, 클린 제목, doc_type/parent_id 포함) 전처리 JSONL.
+
     경로 규칙:
       - input_path:
           * 절대경로면 그대로

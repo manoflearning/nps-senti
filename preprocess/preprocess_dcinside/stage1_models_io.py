@@ -1,3 +1,4 @@
+# preprocess/preprocess_dcinside/stage1_models_io.py
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -36,6 +37,7 @@ class RawPost:
 class FlattenedRecord:
     """
     최종 JSONL 한 줄에 대응되는 구조.
+
     - doc_type: "post" 또는 "comment"
     - parent_id:
         * doc_type == "post"    → None
@@ -54,7 +56,7 @@ class FlattenedRecord:
     comment_index: Optional[int]
     comment_text: Optional[str]
     comment_publishedAt: Optional[str]  # "YYYY-MM-DD HH:MM:SS"
-    combined_text: Optional[str] = None                 # 제목 + (선택적으로 댓글 내용)
+    combined_text: str                 # 제목 + (선택적으로 댓글 내용)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -68,7 +70,7 @@ class FlattenedRecord:
             "comment_index": self.comment_index,
             "comment_text": self.comment_text,
             "comment_publishedAt": self.comment_publishedAt,
-            # Note: combined_text intentionally omitted from output JSON
+            "combined_text": self.combined_text,
         }
 
 

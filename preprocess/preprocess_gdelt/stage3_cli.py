@@ -1,3 +1,4 @@
+# preprocess/preprocess_gdelt/stage3_cli.py
 from __future__ import annotations
 
 import argparse
@@ -25,6 +26,7 @@ def preprocess_gdelt(
 ) -> None:
     """
     GDELT 원본 JSONL → 전처리 JSONL.
+
     - 깨진 JSON 라인 스킵
     - 텍스트 클리닝
     - (본문 텍스트) 길이 기준 필터링

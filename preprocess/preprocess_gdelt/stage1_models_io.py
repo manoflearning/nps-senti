@@ -1,3 +1,4 @@
+# preprocess/preprocess_gdelt/stage1_models_io.py
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -43,10 +44,12 @@ class RawGdeltArticle:
 class FlattenedGdeltArticle:
     """
     전처리 완료 후 감성분석에 바로 쓰일 최종 모델.
+
     ⚠️ 최종 출력 JSONL에서는 다음 필드를 제거한다:
       - domain
       - published_at_source
       - seendate
+
     따라서 to_dict()에는 포함하지 않음.
     """
     id: str
