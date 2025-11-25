@@ -70,7 +70,7 @@ class UnifiedPipeline:
         self.store_observer = store_observer
         self.session = requests.Session()
         retry = Retry(
-            total=3,
+            total=1,
             backoff_factor=0.5,
             status_forcelist=(429, 500, 502, 503, 504),
             allowed_methods=("GET", "HEAD"),
