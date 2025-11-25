@@ -28,6 +28,7 @@ class FetcherConfig:
     )
     pause_seconds: float = 0.5
     allow_live_fetch: bool = True
+    obey_robots: bool = False
 
 
 class RobotsCache:
@@ -82,7 +83,9 @@ class Fetcher:
         self.session = session
         self.timeout = timeout
         self.config = config or FetcherConfig()
-        self.robots = RobotsCache(session, timeout, self.config.user_agent)
+        self.robots: RobotsCache | None = None
+        if self.config.obey_robots:
+            self.robots = RobotsCache(session, timeout, self.config.user_agent)
 
     def _decode_bytes(
         self,
@@ -136,13 +139,20 @@ class Fetcher:
     def _fetch_live(self, candidate: Candidate) -> Optional[FetchResult]:
         if not self.config.allow_live_fetch:
             return None
+        obey_robots = self.config.obey_robots
         # Allow per-candidate override to bypass robots (opt-in via config)
         override = False
-        try:
-            override = bool((candidate.extra or {}).get("robots_override", False))
-        except Exception:  # noqa: BLE001
-            override = False
-        if not override and not self.robots.allowed(candidate.url):
+        if obey_robots:
+            try:
+                override = bool((candidate.extra or {}).get("robots_override", False))
+            except Exception:  # noqa: BLE001
+                override = False
+        if (
+            obey_robots
+            and not override
+            and self.robots is not None
+            and not self.robots.allowed(candidate.url)
+        ):
             logger.debug("Live fetch disallowed by robots: %s", candidate.url)
             return None
         headers = {"User-Agent": self.config.user_agent}

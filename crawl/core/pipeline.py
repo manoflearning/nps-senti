@@ -88,7 +88,10 @@ class UnifiedPipeline:
         self.fetcher = Fetcher(
             self.session,
             timeout=config.limits.request_timeout_sec,
-            config=FetcherConfig(pause_seconds=config.limits.fetch_pause_sec),
+            config=FetcherConfig(
+                pause_seconds=config.limits.fetch_pause_sec,
+                obey_robots=config.limits.obey_robots,
+            ),
         )
         self.session.headers.update({"User-Agent": self.fetcher.config.user_agent})
         self.extractor = Extractor(

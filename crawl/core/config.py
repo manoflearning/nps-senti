@@ -25,6 +25,7 @@ class CrawlLimits:
     request_timeout_sec: int
     fetch_concurrency: int = 4
     fetch_pause_sec: float = 0.1
+    obey_robots: bool = False
 
 
 @dataclass(slots=True)
@@ -176,6 +177,7 @@ def load_config(
         request_timeout_sec=int(limits_cfg.get("request_timeout_sec", 30)),
         fetch_concurrency=int(limits_cfg.get("fetch_concurrency", 8)),
         fetch_pause_sec=float(limits_cfg.get("fetch_pause_sec", 0.1)),
+        obey_robots=bool(limits_cfg.get("obey_robots", False)),
     )
 
     quality_cfg = params.get("quality", {})
