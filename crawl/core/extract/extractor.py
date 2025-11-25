@@ -614,6 +614,9 @@ class Extractor:
         """Remove navigation/listing boilerplate from dcinside body."""
         if not text:
             return ""
+        # Keep only content after the main body marker when present
+        if "갤러리 본문 영역" in text:
+            text = text.split("갤러리 본문 영역", 1)[-1]
         # Drop everything after listing markers
         for marker in (
             "하단 갤러리 리스트 영역",
@@ -1725,6 +1728,13 @@ class Extractor:
             authors=authors,
             published_at=published or extraction.published_at,
         )
+        if site == "dcinside" and extraction.text:
+            extraction = ExtractionResult(
+                text=self._clean_dcinside_body(extraction.text),
+                title=extraction.title,
+                authors=extraction.authors,
+                published_at=extraction.published_at,
+            )
 
         comments: List[dict] = []
         try:
