@@ -4,7 +4,7 @@ import json
 import logging
 from datetime import datetime
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, cast
+from typing import Dict, Iterable, List, Optional, Tuple, cast
 
 from langdetect import DetectorFactory, LangDetectException, detect
 import trafilatura
@@ -194,6 +194,11 @@ class Extractor:
             return None
         cleaned = re.sub(r"\([^)]*\)", " ", s)
         cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        iso_try = cleaned.replace("Z", "+00:00")
+        try:
+            return datetime.fromisoformat(iso_try)
+        except Exception:
+            pass
         patterns = [
             (
                 r"(?P<y4>\d{4})[./-](?P<m>\d{1,2})[./-](?P<d>\d{1,2})"
@@ -203,35 +208,38 @@ class Extractor:
                 r"(?P<y2>\d{2})[./-](?P<m>\d{1,2})[./-](?P<d>\d{1,2})"
                 r"(?:\s+(?P<h>\d{1,2}):(?P<min>\d{2})(?::(?P<s>\d{2}))?)?"
             ),
+            (
+                r"(?P<y4t>\d{4})(?P<mt>\d{2})(?P<dt>\d{2})T(?P<ht>\d{2})(?P<mint>\d{2})(?P<st>\d{2})Z?"
+            ),
         ]
         for pattern in patterns:
             match = re.search(pattern, cleaned)
             if not match:
                 continue
             groups = match.groupdict()
-            y_str = groups.get("y4") or groups.get("y2")
+            y_str = groups.get("y4") or groups.get("y2") or groups.get("y4t")
             if not y_str:
                 continue
             year = int(y_str)
             if groups.get("y2"):
                 year = year + 2000 if year < 70 else year + 1900
             try:
-                month = int(groups.get("m") or 0)
-                day = int(groups.get("d") or 0)
-                hour = int(groups.get("h") or 0)
-                minute = int(groups.get("min") or 0)
-                second = int(groups.get("s") or 0)
+                month = int(groups.get("m") or groups.get("mt") or 0)
+                day = int(groups.get("d") or groups.get("dt") or 0)
+                hour = int(groups.get("h") or groups.get("ht") or 0)
+                minute = int(groups.get("min") or groups.get("mint") or 0)
+                second = int(groups.get("s") or groups.get("st") or 0)
                 return datetime(year, month, day, hour, minute, second)
             except ValueError:
                 continue
         return None
 
-    def _iter_datetimes_from_text(self, text: str) -> List[datetime]:
+    def _iter_datetimes_from_text(self, text: str) -> List[Tuple[datetime, bool]]:
         if not text:
             return []
         cleaned = re.sub(r"\s+", " ", text)
-        results: List[datetime] = []
-        seen: set[str] = set()
+        results: List[Tuple[datetime, bool]] = []
+        seen: set[Tuple[str, bool]] = set()
         patterns = [
             (
                 r"(?P<y4>\d{4})[./-](?P<m>\d{1,2})[./-](?P<d>\d{1,2})"
@@ -260,11 +268,12 @@ class Extractor:
                     dt = datetime(year, month, day, hour, minute, second)
                 except ValueError:
                     continue
-                key = dt.isoformat()
+                has_time = bool(groups.get("h"))
+                key = (dt.isoformat(), has_time)
                 if key in seen:
                     continue
                 seen.add(key)
-                results.append(dt)
+                results.append((dt, has_time))
         return results
 
     def _normalize_published_at(self, value: Optional[str]) -> Optional[str]:
@@ -285,7 +294,35 @@ class Extractor:
         ):
             return None
 
-        dt_candidates: List[datetime] = []
+        dt_candidates: List[Tuple[datetime, bool]] = []
+
+        site = (candidate.source or "").lower()
+
+        if site == "dcinside" and fetch_result.html:
+            try:
+                from bs4 import BeautifulSoup  # type: ignore
+
+                soup = BeautifulSoup(fetch_result.html, "html.parser")
+                selector_hits: List[Tuple[datetime, bool]] = []
+                for el in soup.select(
+                    "span.gall_date, td.gall_date, div.gall_date, span.date, span.write_time"
+                ):
+                    raw_attr = el.get("title")
+                    raw_text = el.get_text(" ", strip=True)
+                    raw = raw_attr if isinstance(raw_attr, str) else raw_text
+                    if not raw:
+                        continue
+                    dt = self._parse_datetime_loose(raw)
+                    if not dt:
+                        continue
+                    selector_hits.append((dt, ":" in raw))
+                if selector_hits:
+                    # Prefer the first explicit metadata timestamp for dcinside
+                    return selector_hits[0][0].isoformat()
+                dt_candidates.extend(selector_hits)
+            except Exception:  # noqa: BLE001
+                pass
+
         for payload in (extraction.text, fetch_result.html):
             if not payload:
                 continue
@@ -305,13 +342,18 @@ class Extractor:
                         continue
                     dt = self._parse_datetime_loose(str(ts))
                     if dt:
-                        dt_candidates.append(dt)
+                        has_time = ":" in str(ts)
+                        dt_candidates.append((dt, has_time))
 
         if not dt_candidates:
             return None
 
-        dt_best = max(dt_candidates)
-        return dt_best.isoformat()
+        dt_with_time = [dt for dt, has_time in dt_candidates if has_time]
+        if dt_with_time:
+            chosen = max(dt_with_time)
+        else:
+            chosen = max(dt for dt, _ in dt_candidates)
+        return chosen.isoformat()
 
     def build_document(
         self,

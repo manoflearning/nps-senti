@@ -83,3 +83,81 @@ def test_forum_published_at_falls_back_to_comments():
     doc, _ = extractor.build_document(cand, _build_fetch_result(), run_id="t")
     assert doc is not None
     assert doc.published_at and doc.published_at.startswith("2025-11-17T01:00:00")
+
+
+def test_forum_published_at_prefers_datetime_over_date_only():
+    extractor = Extractor(
+        keywords=["국민연금"],
+        allowed_languages=["ko"],
+        quality_config=QualityConfig(min_keyword_hits=0),
+    )
+
+    def fake_trafilatura(_html: str, _url: str) -> ExtractionResult:
+        return ExtractionResult(
+            text=(
+                "금투세폐지환영 2025.11.22 13:17:43\n| 설문 | ... | 25/11/24 | - | - |"
+            ),
+            title="제목",
+            authors=[],
+            published_at=None,
+        )
+
+    extractor._run_trafilatura = fake_trafilatura  # type: ignore[method-assign]
+    extractor._augment_forum = (
+        lambda candidate, extraction, fetch_result: extraction  # type: ignore[method-assign]
+    )
+
+    cand = Candidate(
+        url="https://www.example.com/view?code=freeb&No=1",
+        source="dcinside",
+        discovered_via={"type": "forum"},
+        title="원제",
+    )
+    doc, _ = extractor.build_document(cand, _build_fetch_result(), run_id="t")
+    assert doc is not None
+    # Should take the full datetime, not the newer date-only row
+    assert doc.published_at is not None
+    assert doc.published_at.startswith("2025-11-22T13:17:43")
+
+
+def test_loose_iso_parse_from_extraction():
+    extractor = Extractor(
+        keywords=["국민연금"],
+        allowed_languages=["ko"],
+        quality_config=QualityConfig(min_keyword_hits=0),
+    )
+
+    def fake_trafilatura(_html: str, _url: str) -> ExtractionResult:
+        return ExtractionResult(
+            text="",
+            title="제목",
+            authors=[],
+            published_at="2025-11-23T14:30:00Z",
+        )
+
+    extractor._run_trafilatura = fake_trafilatura  # type: ignore[method-assign]
+    extractor._augment_forum = (
+        lambda candidate, extraction, fetch_result: extraction  # type: ignore[method-assign]
+    )
+
+    cand = Candidate(
+        url="https://example.com/a",
+        source="gdelt",
+        discovered_via={"type": "gdelt"},
+        title="원제",
+    )
+    doc, _ = extractor.build_document(
+        cand,
+        FetchResult(
+            url=cand.url,
+            fetched_from="live",
+            status_code=200,
+            html="",
+            snapshot_url=cand.url,
+            encoding="utf-8",
+            fetched_at=datetime.now(timezone.utc),
+        ),
+        run_id="t",
+    )
+    assert doc is not None
+    assert doc.published_at and doc.published_at.startswith("2025-11-23T14:30:00")

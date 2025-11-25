@@ -202,7 +202,12 @@ class GdeltDiscoverer:
                 timestamp = None
                 if seendate:
                     try:
-                        timestamp = datetime.strptime(seendate, "%Y%m%d")
+                        # Prefer full timestamp with time if available (e.g., 20251123T143000Z)
+                        if "T" in seendate:
+                            ts = datetime.strptime(seendate, "%Y%m%dT%H%M%SZ")
+                        else:
+                            ts = datetime.strptime(seendate, "%Y%m%d")
+                        timestamp = ts.replace(tzinfo=timezone.utc)
                     except ValueError:
                         timestamp = None
                 batch.append(
