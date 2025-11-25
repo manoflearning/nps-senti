@@ -65,7 +65,12 @@ class YouTubeDiscoverer:
             except requests.RequestException as exc:
                 logger.warning("YouTube search request failed: %s", exc)
                 continue
-            items = response.json().get("items", [])
+            try:
+                search_payload = response.json()
+            except ValueError:
+                logger.warning("YouTube search response not JSON (keyword=%s)", keyword)
+                continue
+            items = search_payload.get("items", [])
             video_ids = [
                 item["id"]["videoId"]
                 for item in items
@@ -86,9 +91,16 @@ class YouTubeDiscoverer:
             except requests.RequestException as exc:
                 logger.warning("YouTube video details failed: %s", exc)
                 continue
+            try:
+                details_payload = details_resp.json()
+            except ValueError:
+                logger.warning(
+                    "YouTube details response not JSON (keyword=%s)", keyword
+                )
+                continue
             details = {
                 item["id"]: item
-                for item in details_resp.json().get("items", [])
+                for item in details_payload.get("items", [])
                 if "id" in item
             }
             for item in items:

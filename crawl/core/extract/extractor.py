@@ -468,7 +468,13 @@ class Extractor:
                     resp = requests.get(url, params=params, timeout=20)
                     if resp.status_code >= 400:
                         break
-                    data = resp.json()
+                    try:
+                        data = resp.json()
+                    except ValueError:
+                        logger.debug(
+                            "YouTube comments response not JSON for video=%s", video_id
+                        )
+                        break
                     for item in data.get("items", []):
                         top = (
                             item.get("snippet", {})
