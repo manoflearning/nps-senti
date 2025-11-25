@@ -19,3 +19,8 @@ data_crawl/
 
 .DS_Store
 **/.DS_Store
+
+**/.DS_Store
+
+preprocessing_data/
+sentiment_output_data/
