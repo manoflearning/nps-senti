@@ -129,7 +129,7 @@ def test_loose_iso_parse_from_extraction():
 
     def fake_trafilatura(_html: str, _url: str) -> ExtractionResult:
         return ExtractionResult(
-            text="",
+            text="국민연금 기사",
             title="제목",
             authors=[],
             published_at="2025-11-23T14:30:00Z",
