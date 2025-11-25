@@ -6,7 +6,6 @@ from dataclasses import asdict, dataclass
 from typing import Any, Dict
 
 from .grok_client import GrokClient
-from .prompts import build_messages
 
 
 @dataclass
@@ -191,12 +190,15 @@ def _format_explanation(label_ko: str, explanation: str | None) -> str:
     return f"[{label_ko}] {base}"
 
 
-def parse_grok_response(raw_text: str) -> SentimentResult:
+def parse_grok_response(raw_text: str | Dict[str, Any]) -> SentimentResult:
     """
-    Grok가 반환한 텍스트를 SentimentResult로 변환하고
+    Grok가 반환한 텍스트 또는 딕셔너리를 SentimentResult로 변환하고
     규칙에 맞게 값들을 정리한다.
     """
-    data = _extract_json(raw_text)
+    if isinstance(raw_text, str):
+        data = _extract_json(raw_text)
+    else:
+        data = raw_text
 
     is_related = _coerce_bool(data.get("is_related", False))
     negative = _coerce_float(data.get("negative", 0.0))
@@ -245,6 +247,6 @@ def analyze_single_comment(
     if client is None:
         client = GrokClient()
 
-    messages = build_messages(comment=comment, source=source)
-    raw = client.chat_completion(messages)
-    return parse_grok_response(raw)
+    meta = {"source": source}
+    result = client.analyze_sentiment(text=comment, meta=meta)
+    return parse_grok_response(result)
