@@ -610,6 +610,23 @@ class Extractor:
     def _clean_ws(self, s: str) -> str:
         return re.sub(r"\s+", " ", (s or "").strip())
 
+    def _clean_dcinside_body(self, text: str) -> str:
+        """Remove navigation/listing boilerplate from dcinside body."""
+        if not text:
+            return ""
+        # Keep only content after the main body marker when present
+        if "갤러리 본문 영역" in text:
+            text = text.split("갤러리 본문 영역", 1)[-1]
+        # Drop everything after listing markers
+        for marker in (
+            "하단 갤러리 리스트 영역",
+            "갤러리 리스트 영역",
+            "왼쪽 컨텐츠 영역",
+        ):
+            if marker in text:
+                text = text.split(marker, 1)[0]
+        return text.strip()
+
     def _extract_text(self, root, candidates: list[str]) -> str:  # type: ignore[no-untyped-def]
         for sel in candidates:
             el = root.select_one(sel)
@@ -628,6 +645,143 @@ class Extractor:
             return val.strip()
         txt = el.get_text(" ", strip=True)
         return txt.strip() if txt else None
+
+    def _extract_forum_body_text(self, site: str, soup) -> Optional[str]:  # type: ignore[no-untyped-def]
+        selectors = {
+            "dcinside": [
+                "div.write_div",
+                "div.writing_view_box",
+                "div#dgn_gallery_left div.write_div",
+            ],
+            "mlbpark": [
+                "div#contentDetail",
+                "div.viewV_con",
+                "div.vArticle",
+                "div.vw_con",
+            ],
+            "theqoo": [
+                "div.xe_content",
+                "div.rd__content",
+                "div#article_1",
+            ],
+            "ppomppu": [
+                "div#writeContents",
+                "div.mid-text-area",
+                "div.memo_content",
+                "div.board-contents",
+            ],
+            "bobaedream": [
+                "div.bodyCont",
+                "div#contents",
+                "div.view_cont",
+            ],
+        }
+        for sel in selectors.get(site, []):
+            el = soup.select_one(sel)
+            if el:
+                text_raw = el.get_text(" ", strip=True)
+                text = self._clean_ws(text_raw)
+                if site == "dcinside":
+                    text = self._clean_dcinside_body(text)
+                if len(text) >= 3:
+                    return text
+                # If dcinside body is image-only, fall back to img alt/src to avoid HTML fallback
+                if site == "dcinside":
+                    imgs = el.select("img")
+                    parts = []
+                    for img in imgs:
+                        alt = img.get("alt")
+                        if alt and alt.strip():
+                            parts.append(alt.strip())
+                        else:
+                            src = img.get("src")
+                            if src and src.strip():
+                                parts.append(src.strip())
+                    img_text = self._clean_dcinside_body(" ".join(parts))
+                    if img_text:
+                        return img_text
+        return None
+
+    def _extract_forum_title(self, site: str, soup) -> Optional[str]:  # type: ignore[no-untyped-def]
+        selectors = {
+            "dcinside": ["div.view_content div.title_subject", "h3.title_usual"],
+            "mlbpark": ["div#contentWrap div.tit h3", "div.tit h3"],
+            "theqoo": ["h1.rd_hd__title", "div.rd_hd__title"],
+            "ppomppu": ["div.topTitle-text", "div.title span"],
+            "bobaedream": ["div.view_title h3", "div.viewtop h3"],
+        }
+        for sel in selectors.get(site, []):
+            el = soup.select_one(sel)
+            if el:
+                text = self._clean_ws(el.get_text(" ", strip=True))
+                if text:
+                    return text
+        return None
+
+    def _extract_forum_author(self, site: str, soup) -> Optional[str]:  # type: ignore[no-untyped-def]
+        selectors = {
+            "dcinside": [".nickname", ".nick", ".mng_nick"],
+            "mlbpark": ["div#contentWrap .name", "span.nick"],
+            "theqoo": ["div.rd_hd__info .nickname", "span.nickname", "span.author"],
+            "ppomppu": ["li.topTitle-name", "a.baseList-name", "span.writer"],
+            "bobaedream": ["span.writer", "span.name", "div.writer", "p.writer"],
+        }
+        for sel in selectors.get(site, []):
+            el = soup.select_one(sel)
+            if el:
+                text = self._clean_ws(el.get_text(" ", strip=True))
+                if text:
+                    return text
+        if site == "theqoo":
+            try:
+                header = soup.select_one("div.rd_hd")
+                if header:
+                    text = header.get_text(" ", strip=True)
+                    if text:
+                        import re
+
+                        m = re.search(r"([\\w\\.-]{2,}|[가-힣]+) 더쿠", text)
+                        if m:
+                            return m.group(0)
+                        if "무명의 더쿠" in text:
+                            return "무명의 더쿠"
+            except Exception:  # noqa: BLE001
+                pass
+        return None
+
+    def _extract_forum_published(  # type: ignore[no-untyped-def]
+        self, site: str, soup, html: str
+    ) -> Optional[str]:
+        selectors = {
+            "dcinside": ["span.gall_date", "div.gall_date"],
+            "mlbpark": ["span.date", "div.tit .date"],
+            "theqoo": ["span.time", "span.date"],
+            "ppomppu": ["div.topTitle-box li"],
+            "bobaedream": ["span.date", "span.countGroup"],
+        }
+        for sel in selectors.get(site, []):
+            if site == "ppomppu" and sel == "div.topTitle-box li":
+                for li in soup.select(sel):
+                    text = self._clean_ws(li.get_text(" ", strip=True))
+                    if text.startswith("등록일"):
+                        cleaned = text.replace("등록일", "", 1).strip()
+                        if cleaned:
+                            return cleaned
+                continue
+            for el in soup.select(sel):
+                raw = el.get("title") if hasattr(el, "get") else None
+                raw_text = self._clean_ws(el.get_text(" ", strip=True))
+                candidate = raw if isinstance(raw, str) and raw.strip() else raw_text
+                if candidate:
+                    return candidate
+        if site == "mlbpark":
+            match = re.search(
+                r"contentWriteDate['\"]\s*:\s*['\"]([^'\"]+)",
+                html or "",
+            )
+            if match and match.group(1):
+                return match.group(1)
+        return None
 
     def _extract_comments_generic(self, soup) -> List[dict]:  # type: ignore[no-untyped-def]
         items: List[dict] = []
@@ -1557,6 +1711,31 @@ class Extractor:
         soup = BeautifulSoup(html, "html.parser")
 
         site = (candidate.source or "").lower()
+        body_text = self._extract_forum_body_text(site, soup)
+        author = self._extract_forum_author(site, soup)
+        published = extraction.published_at or self._extract_forum_published(
+            site, soup, html
+        )
+        title = extraction.title or self._extract_forum_title(site, soup)
+
+        authors = list(extraction.authors or [])
+        if not authors and author:
+            authors = [author]
+
+        extraction = ExtractionResult(
+            text=body_text or extraction.text,
+            title=title or extraction.title,
+            authors=authors,
+            published_at=published or extraction.published_at,
+        )
+        if site == "dcinside" and extraction.text:
+            extraction = ExtractionResult(
+                text=self._clean_dcinside_body(extraction.text),
+                title=extraction.title,
+                authors=extraction.authors,
+                published_at=extraction.published_at,
+            )
+
         comments: List[dict] = []
         try:
             if site == "dcinside":

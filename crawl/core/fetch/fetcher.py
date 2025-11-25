@@ -64,7 +64,7 @@ class RobotsCache:
                     self._allow_all_hosts.add(base)
                 else:
                     parser.parse(response.text.splitlines())
-            except requests.RequestException:
+            except Exception:
                 parser.parse([])
                 self._allow_all_hosts.add(base)
             self.cache[base] = parser
@@ -161,7 +161,7 @@ class Fetcher:
                 candidate.url, headers=headers, timeout=self.timeout
             )
             response.raise_for_status()
-        except requests.RequestException as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.debug("Live fetch failed: %s", exc)
             return None
         html, encoding = self._decode_bytes(
