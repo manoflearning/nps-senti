@@ -5,6 +5,8 @@ import os
 from dataclasses import dataclass
 from typing import Callable, Dict, Iterable, List, Mapping, Optional, Tuple, cast
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 
 import requests
 from dotenv import load_dotenv
@@ -17,8 +19,8 @@ from .discovery.gdelt import GdeltConfig, GdeltDiscoverer
 from .discovery.youtube import YouTubeDiscoverer
 from .discovery.forums import ForumsDiscoverer
 from .extract.extractor import Extractor
-from .fetch.fetcher import Fetcher
-from .models import Candidate, Document
+from .fetch.fetcher import Fetcher, FetcherConfig
+from .models import Candidate, Document, FetchResult
 from .storage.index import DocumentIndex
 from .storage.writer import MultiSourceJsonlWriter
 from .utils import normalize_url
@@ -38,6 +40,7 @@ class PipelineStats:
     quality_rejected: int
     index_duplicates: int
     extraction_failed: int
+    timings_sec: Dict[str, float]
 
 
 class UnifiedPipeline:
@@ -73,12 +76,19 @@ class UnifiedPipeline:
             allowed_methods=("GET", "HEAD"),
             respect_retry_after_header=True,
         )
-        adapter = HTTPAdapter(max_retries=retry)
+        self.fetch_concurrency = max(1, int(config.limits.fetch_concurrency))
+        pool_size = max(10, self.fetch_concurrency * 2)
+        adapter = HTTPAdapter(
+            max_retries=retry,
+            pool_connections=pool_size,
+            pool_maxsize=pool_size,
+        )
         self.session.mount("https://", adapter)
         self.session.mount("http://", adapter)
         self.fetcher = Fetcher(
             self.session,
             timeout=config.limits.request_timeout_sec,
+            config=FetcherConfig(pause_seconds=config.limits.fetch_pause_sec),
         )
         self.session.headers.update({"User-Agent": self.fetcher.config.user_agent})
         self.extractor = Extractor(
@@ -189,7 +199,10 @@ class UnifiedPipeline:
 
     def run(self) -> PipelineStats:
         logger.info("Starting unified pipeline: run_id=%s", self.config.runtime.run_id)
+        t_start_total = time.monotonic()
+        t_start = time.monotonic()
         discovered = self.discover()
+        t_discovery = time.monotonic() - t_start
 
         unique_candidates: Dict[str, Candidate] = {}
         for source, candidates in discovered.items():
@@ -232,19 +245,18 @@ class UnifiedPipeline:
         failed_fetch = 0
         quality_rejected = 0
         index_duplicates = 0
-        # dedupe removed
         extraction_failed = 0
 
+        t_fetch = 0.0
+        t_extract = 0.0
+        t_store = 0.0
+
         attempted = 0
-        for candidate in tqdm(
-            all_candidates,
-            desc="Fetching",
-            unit="doc",
-        ):
+        task_candidates: List[Candidate] = []
+        for candidate in all_candidates:
             if self.max_fetch is not None and attempted >= self.max_fetch:
                 break
             attempted += 1
-            # Early skip if this URL was already stored previously
             try:
                 if self.index.contains_url(candidate.url):
                     duplicates += 1
@@ -252,22 +264,69 @@ class UnifiedPipeline:
                     continue
             except Exception:  # noqa: BLE001
                 pass
-            fetch_result = self.fetcher.fetch(candidate)
+            task_candidates.append(candidate)
+
+        def _process_candidate(
+            cand: Candidate,
+        ) -> tuple[
+            Candidate,
+            Optional[FetchResult],
+            Optional[Document],
+            Optional[dict],
+            float,
+            float,
+        ]:
+            t0 = time.monotonic()
+            fetch_result = self.fetcher.fetch(cand)
+            fetch_elapsed = time.monotonic() - t0
+            if not fetch_result or not fetch_result.html:
+                return cand, None, None, None, fetch_elapsed, 0.0
+            t1 = time.monotonic()
+            document, quality_info = self.extractor.build_document(
+                cand, fetch_result, run_id=self.config.runtime.run_id
+            )
+            extract_elapsed = time.monotonic() - t1
+            return (
+                cand,
+                fetch_result,
+                document,
+                quality_info,
+                fetch_elapsed,
+                extract_elapsed,
+            )
+
+        def _handle_result(
+            res: tuple[
+                Candidate,
+                Optional[FetchResult],
+                Optional[Document],
+                Optional[dict],
+                float,
+                float,
+            ],
+        ) -> None:
+            nonlocal fetched, stored, duplicates, failed_fetch, quality_rejected
+            nonlocal index_duplicates, extraction_failed, t_fetch, t_extract, t_store
+            (
+                cand,
+                fetch_result,
+                document,
+                quality_info,
+                fetch_elapsed,
+                extract_elapsed,
+            ) = res
+            t_fetch += fetch_elapsed
+            t_extract += extract_elapsed
             if not fetch_result or not fetch_result.html:
                 failed_fetch += 1
-                continue
+                return
             fetched += 1
-            document, quality_info = self.extractor.build_document(
-                candidate,
-                fetch_result,
-                run_id=self.config.runtime.run_id,
-            )
             if not document:
                 if quality_info and quality_info.get("status") == "quality-reject":
                     quality_rejected += 1
                 else:
                     extraction_failed += 1
-                continue
+                return
             if document.extra is None:
                 document.extra = {}
             fetch_meta = cast(dict, document.extra.setdefault("fetch", {}))
@@ -278,25 +337,45 @@ class UnifiedPipeline:
                     "fetched_from": fetch_result.fetched_from,
                 }
             )
-            # Skip if we've already stored this exact URL before (regardless of content changes)
-            if self.index.contains(document.id) or self.index.contains_url(
-                document.url
-            ):
-                duplicates += 1
-                index_duplicates += 1
-                continue
-            # Keep similar posts; only index-based exact duplicates are filtered
+            try:
+                if self.index.contains(document.id) or self.index.contains_url(
+                    document.url
+                ):
+                    duplicates += 1
+                    index_duplicates += 1
+                    return
+            except Exception:  # noqa: BLE001
+                pass
+            t2 = time.monotonic()
             self.storage.append(document)
             self.index.add(document.id)
             self.index.add_url(document.url)
+            t_store += time.monotonic() - t2
             stored += 1
-            # Notify observer for per-document accounting (e.g., for auto-crawl state)
             if self.store_observer is not None:
                 try:
-                    self.store_observer(document, candidate)
+                    self.store_observer(document, cand)
                 except Exception:  # noqa: BLE001
-                    # Observer failures must not break the pipeline
                     pass
+
+        if not task_candidates:
+            pass
+        elif self.fetch_concurrency <= 1 or len(task_candidates) == 1:
+            for cand in tqdm(task_candidates, desc="Fetch+Extract", unit="doc"):
+                _handle_result(_process_candidate(cand))
+        else:
+            with ThreadPoolExecutor(max_workers=self.fetch_concurrency) as executor:
+                futures = [
+                    executor.submit(_process_candidate, cand)
+                    for cand in task_candidates
+                ]
+                for fut in tqdm(
+                    as_completed(futures),
+                    total=len(futures),
+                    desc="Fetch+Extract",
+                    unit="doc",
+                ):
+                    _handle_result(fut.result())
 
         stats = PipelineStats(
             discovered={k: len(v) for k, v in discovered.items()},
@@ -307,8 +386,19 @@ class UnifiedPipeline:
             quality_rejected=quality_rejected,
             index_duplicates=index_duplicates,
             extraction_failed=extraction_failed,
+            timings_sec={
+                "discovery": round(t_discovery, 3),
+                "fetch": round(t_fetch, 3),
+                "extract": round(t_extract, 3),
+                "store": round(t_store, 3),
+                "total": round(time.monotonic() - t_start_total, 3),
+            },
         )
-        logger.info("Pipeline completed stats=%s", stats)
+        logger.info(
+            "Pipeline completed stats=%s timings=%s",
+            stats,
+            stats.timings_sec,
+        )
         self.index.flush()
         return stats
 

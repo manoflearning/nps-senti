@@ -23,6 +23,8 @@ class OutputConfig:
 class CrawlLimits:
     max_candidates_per_source: int
     request_timeout_sec: int
+    fetch_concurrency: int = 4
+    fetch_pause_sec: float = 0.1
 
 
 @dataclass(slots=True)
@@ -172,6 +174,8 @@ def load_config(
     limits = CrawlLimits(
         max_candidates_per_source=int(limits_cfg.get("max_candidates_per_source", 500)),
         request_timeout_sec=int(limits_cfg.get("request_timeout_sec", 30)),
+        fetch_concurrency=int(limits_cfg.get("fetch_concurrency", 8)),
+        fetch_pause_sec=float(limits_cfg.get("fetch_pause_sec", 0.1)),
     )
 
     quality_cfg = params.get("quality", {})

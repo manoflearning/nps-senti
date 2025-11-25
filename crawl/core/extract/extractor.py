@@ -80,6 +80,12 @@ class Extractor:
         self.forums_comments_enabled = _env_bool("FORUMS_COMMENTS_ENABLED", True)
         self.forums_comments_max = max(0, _env_int("FORUMS_COMMENTS_MAX", 200))
 
+        # Fast mode: skip expensive comment fetches to improve throughput
+        fast_mode = _env_bool("FAST_CRAWL", False)
+        if fast_mode:
+            self.youtube_comments_pages = 0
+            self.forums_comments_enabled = False
+
         # Optional cookies for sites that gate comment APIs
         self.theqoo_cookies = os.environ.get("THEQOO_COOKIES")
         self.ppomppu_cookies = os.environ.get("PPOMPPU_COOKIES")
