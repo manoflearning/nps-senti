@@ -167,9 +167,13 @@ class Extractor:
         except LangDetectException:
             return "und"
 
-    def _build_quality(self, text: str, lang: str) -> Dict[str, object]:
+    def _build_quality(
+        self, text: str, lang: str, title: Optional[str] = None
+    ) -> Dict[str, object]:
         score = 0.0
         reasons: List[str] = []
+        # Use title to help keyword hits when body is short/empty
+        blended = text if title is None else f"{title}\n{text}"
         length = len(text)
 
         if lang.lower() in self.allowed_languages:
@@ -177,7 +181,7 @@ class Extractor:
         else:
             reasons.append(f"lang={lang}")
 
-        text_lower = text.lower()
+        text_lower = blended.lower()
         keyword_hits = sum(1 for kw in self.keywords_lower if kw and kw in text_lower)
         coverage = (
             keyword_hits / len(self.keywords_lower) if self.keywords_lower else 0.0
@@ -408,7 +412,11 @@ class Extractor:
             logger.debug("Forum augmentation failed: %s", exc)
 
         lang = self._detect_lang(extraction.text)
-        quality = self._build_quality(extraction.text, lang)
+        quality = self._build_quality(
+            extraction.text,
+            lang,
+            title=extraction.title or candidate.title,
+        )
         if cast(int, quality["keyword_hits"]) < self.quality_config.min_keyword_hits:
             return None, {
                 "status": "quality-reject",
