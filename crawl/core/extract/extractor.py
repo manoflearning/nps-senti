@@ -610,6 +610,20 @@ class Extractor:
     def _clean_ws(self, s: str) -> str:
         return re.sub(r"\s+", " ", (s or "").strip())
 
+    def _clean_dcinside_body(self, text: str) -> str:
+        """Remove navigation/listing boilerplate from dcinside body."""
+        if not text:
+            return ""
+        # Drop everything after listing markers
+        for marker in (
+            "하단 갤러리 리스트 영역",
+            "갤러리 리스트 영역",
+            "왼쪽 컨텐츠 영역",
+        ):
+            if marker in text:
+                text = text.split(marker, 1)[0]
+        return text.strip()
+
     def _extract_text(self, root, candidates: list[str]) -> str:  # type: ignore[no-untyped-def]
         for sel in candidates:
             el = root.select_one(sel)
@@ -662,9 +676,27 @@ class Extractor:
         for sel in selectors.get(site, []):
             el = soup.select_one(sel)
             if el:
-                text = self._clean_ws(el.get_text(" ", strip=True))
+                text_raw = el.get_text(" ", strip=True)
+                text = self._clean_ws(text_raw)
+                if site == "dcinside":
+                    text = self._clean_dcinside_body(text)
                 if len(text) >= 3:
                     return text
+                # If dcinside body is image-only, fall back to img alt/src to avoid HTML fallback
+                if site == "dcinside":
+                    imgs = el.select("img")
+                    parts = []
+                    for img in imgs:
+                        alt = img.get("alt")
+                        if alt and alt.strip():
+                            parts.append(alt.strip())
+                        else:
+                            src = img.get("src")
+                            if src and src.strip():
+                                parts.append(src.strip())
+                    img_text = self._clean_dcinside_body(" ".join(parts))
+                    if img_text:
+                        return img_text
         return None
 
     def _extract_forum_title(self, site: str, soup) -> Optional[str]:  # type: ignore[no-untyped-def]
@@ -697,6 +729,21 @@ class Extractor:
                 text = self._clean_ws(el.get_text(" ", strip=True))
                 if text:
                     return text
+        if site == "theqoo":
+            try:
+                header = soup.select_one("div.rd_hd")
+                if header:
+                    text = header.get_text(" ", strip=True)
+                    if text:
+                        import re
+
+                        m = re.search(r"([\\w\\.-]{2,}|[가-힣]+) 더쿠", text)
+                        if m:
+                            return m.group(0)
+                        if "무명의 더쿠" in text:
+                            return "무명의 더쿠"
+            except Exception:  # noqa: BLE001
+                pass
         return None
 
     def _extract_forum_published(  # type: ignore[no-untyped-def]
