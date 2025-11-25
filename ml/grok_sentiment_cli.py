@@ -21,6 +21,7 @@ logging.basicConfig(
 
 # ---------- 텍스트 & 메타 추출 ----------
 
+
 @dataclass
 class TextAndMeta:
     text: str
@@ -95,7 +96,9 @@ def extract_text_and_meta(obj: Dict[str, Any]) -> TextAndMeta:
             break
 
     if not text:
-        logger.warning("[WARN] id=%s 에 텍스트가 비어 있음, 제목만 사용합니다.", identifier)
+        logger.warning(
+            "[WARN] id=%s 에 텍스트가 비어 있음, 제목만 사용합니다.", identifier
+        )
         title_fallback = (obj.get("title") or "").strip()
         text = title_fallback
 
@@ -113,7 +116,9 @@ def extract_text_and_meta(obj: Dict[str, Any]) -> TextAndMeta:
 
     return TextAndMeta(text=text, meta=meta)
 
+
 # ---------- JSONL 입출력 ----------
+
 
 def read_jsonl(path: str | Path, limit: Optional[int] = None) -> List[Dict[str, Any]]:
     p = Path(path)
@@ -129,7 +134,9 @@ def read_jsonl(path: str | Path, limit: Optional[int] = None) -> List[Dict[str, 
             try:
                 obj = json.loads(line)
             except json.JSONDecodeError as exc:
-                logger.warning("[WARN] 라인 %d JSON 파싱 실패, 스킵: %s", line_no, str(exc))
+                logger.warning(
+                    "[WARN] 라인 %d JSON 파싱 실패, 스킵: %s", line_no, str(exc)
+                )
                 continue
             records.append(obj)
             if limit is not None and len(records) >= limit:
@@ -151,6 +158,7 @@ def write_jsonl(path: str | Path, records: List[Dict[str, Any]]) -> None:
 
 
 # ---------- 개별 레코드 분석 ----------
+
 
 def analyze_one(
     client: GrokClient,
@@ -181,6 +189,7 @@ def analyze_one(
 
 
 # ---------- 전체 파일 처리 ----------
+
 
 def process_file(
     input_path: str | Path,
@@ -220,7 +229,9 @@ def process_file(
                 try:
                     _, merged = future.result()
                 except Exception as exc:
-                    logger.warning("[WARN] index=%d future 처리 중 예외: %s", idx, repr(exc))
+                    logger.warning(
+                        "[WARN] index=%d future 처리 중 예외: %s", idx, repr(exc)
+                    )
                     merged = {
                         **records[idx],
                         "is_related": False,
@@ -242,6 +253,7 @@ def process_file(
 
 
 # ---------- CLI 엔트리포인트 ----------
+
 
 def main(argv: Optional[List[str]] = None) -> None:
     parser = argparse.ArgumentParser(

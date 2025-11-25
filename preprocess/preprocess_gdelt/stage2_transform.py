@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 # ---------- 날짜 처리 ----------
 
+
 def choose_published_at(
     published_at: Optional[str],
     seendate: Optional[str],
@@ -124,7 +125,10 @@ def clean_text(raw_text: str) -> str:
 
 # ---------- 중복 처리 ----------
 
-def deduplicate_records(records: List[FlattenedGdeltArticle]) -> List[FlattenedGdeltArticle]:
+
+def deduplicate_records(
+    records: List[FlattenedGdeltArticle],
+) -> List[FlattenedGdeltArticle]:
     """
     GDELT 기사 중복 제거.
 
@@ -163,6 +167,7 @@ def deduplicate_records(records: List[FlattenedGdeltArticle]) -> List[FlattenedG
 
 
 # ---------- 핵심: RawGdeltArticle → FlattenedGdeltArticle ----------
+
 
 def flatten_article(
     raw: RawGdeltArticle,

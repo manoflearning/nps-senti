@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 # ---------- 날짜/시간 처리 ----------
 
+
 def choose_published_at(
     top_published: Optional[str],
     snippet_published: Optional[str],
@@ -25,6 +26,7 @@ def choose_published_at(
       1. 상위 published_at
       2. snippet.publishedAt
     """
+
     def _normalize_iso(s: str) -> Optional[str]:
         if not s:
             return None
@@ -169,7 +171,10 @@ def build_text_clean(title: str, clean_description: str) -> str:
 
 # ---------- 중복 처리 ----------
 
-def deduplicate_records(records: List[FlattenedYoutubeVideo]) -> List[FlattenedYoutubeVideo]:
+
+def deduplicate_records(
+    records: List[FlattenedYoutubeVideo],
+) -> List[FlattenedYoutubeVideo]:
     """
     중복 영상 제거.
     기준:
@@ -212,6 +217,7 @@ def deduplicate_records(records: List[FlattenedYoutubeVideo]) -> List[FlattenedY
 
 
 # ---------- 핵심: RawYoutubeVideo → FlattenedYoutubeVideo ----------
+
 
 def flatten_video(
     raw: RawYoutubeVideo,

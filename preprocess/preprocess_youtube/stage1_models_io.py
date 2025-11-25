@@ -12,12 +12,14 @@ logger = logging.getLogger(__name__)
 
 # ---------- 데이터 모델 ----------
 
+
 @dataclass
 class RawYoutubeVideo:
     """
     youtube.jsonl 한 줄을 구조화한 원본 모델.
     (원본 필드들은 넉넉하게 들고 있고, 실제로 쓸지는 stage2에서 결정)
     """
+
     id: str
     source: str
     url: str
@@ -56,6 +58,7 @@ class FlattenedYoutubeVideo:
     text_clean은 파일에 저장하지 않고, 나중에 Grok CLI에서
     title + description 으로 조립해서 사용한다.
     """
+
     id: str
     source: str
     lang: str
@@ -79,6 +82,7 @@ class FlattenedYoutubeVideo:
 
 
 # ---------- 입력: 안전 JSON 로더 ----------
+
 
 def load_raw_youtube(path: str | Path) -> Iterator[RawYoutubeVideo]:
     """
@@ -128,23 +132,18 @@ def load_raw_youtube(path: str | Path) -> Iterator[RawYoutubeVideo]:
                 source=str(obj.get("source", "")) or "youtube",
                 url=str(obj.get("url", "")),
                 lang=str(obj.get("lang", "")) or "ko",
-
                 title_top=str(obj.get("title", "")),
                 text_top=str(obj.get("text", "")),
                 published_at_top=str(obj.get("published_at", "")) or None,
-
                 snippet_published_at=str(snippet.get("publishedAt") or "") or None,
                 snippet_title=str(snippet.get("title") or "") or None,
                 snippet_description=str(snippet.get("description") or "") or None,
                 channel_id=str(snippet.get("channelId") or "") or None,
                 channel_title=str(snippet.get("channelTitle") or "") or None,
-
                 duration_raw=str(content_details.get("duration") or "") or None,
-
                 view_count_raw=str(statistics.get("viewCount") or "") or None,
                 like_count_raw=str(statistics.get("likeCount") or "") or None,
                 comment_count_raw=str(statistics.get("commentCount") or "") or None,
-
                 keyword=str(discovered.get("keyword") or "") or None,
                 extra=extra,
             )
@@ -152,7 +151,10 @@ def load_raw_youtube(path: str | Path) -> Iterator[RawYoutubeVideo]:
 
 # ---------- 출력: Flattened → JSONL ----------
 
-def write_flattened_jsonl(path: str | Path, records: Iterable[FlattenedYoutubeVideo]) -> None:
+
+def write_flattened_jsonl(
+    path: str | Path, records: Iterable[FlattenedYoutubeVideo]
+) -> None:
     """
     FlattenedYoutubeVideo 이터러블을 JSONL 로 저장.
     상위 디렉터리가 없으면 자동 생성.
