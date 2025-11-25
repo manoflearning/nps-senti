@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
@@ -63,9 +62,6 @@ class AutoCrawler:
         include_forums: bool = True,
         max_forums_windows: int = 1,
     ) -> Dict[str, int]:
-        # Possibly adjust environment to reduce YouTube comment API usage
-        os.environ.setdefault("YOUTUBE_COMMENTS_PAGES", "0")
-
         # Step 0: decay cooldowns
         self.state.tick_cooldowns()
 

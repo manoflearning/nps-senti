@@ -33,7 +33,8 @@ autocrawl:
 YouTube Quota
 - Uses a conservative estimator: ~101 units per keyword (search 100 + videos 1).
 - Quota state is tracked in `data_crawl/_auto_state.json` and resets daily (UTC).
-- Comments fetching is disabled for autocrawl runs by default (`YOUTUBE_COMMENTS_PAGES=0`).
+- Comments fetching now follows the global defaults (5 pages). Set `YOUTUBE_COMMENTS_PAGES=0`
+  before running if you want to skip comment collection to save quota.
 
 State
 - Stored at `data_crawl/_auto_state.json` with per-month per-source counts and YouTube quota bookkeeping.

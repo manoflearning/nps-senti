@@ -540,6 +540,7 @@ class Extractor:
                             comments_texts.append(text_clean)
                             comments_meta.append(
                                 {
+                                    "text": text_clean,
                                     "author": top.get("authorDisplayName"),
                                     "likeCount": top.get("likeCount"),
                                     "publishedAt": top.get("publishedAt"),
@@ -564,6 +565,7 @@ class Extractor:
                                     comments_texts.append(r_clean)
                                     comments_meta.append(
                                         {
+                                            "text": r_clean,
                                             "author": rs.get("authorDisplayName"),
                                             "likeCount": rs.get("likeCount"),
                                             "publishedAt": rs.get("publishedAt"),
