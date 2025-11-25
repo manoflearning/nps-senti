@@ -1,5 +1,5 @@
 time_window:
-  start_date: "2025-01-01T00:00:00Z"
+  start_date: "2020-01-01T00:00:00Z"
   end_date: null
 lang: ["ko", "en"]
 keywords:
@@ -28,9 +28,10 @@ crawl:
   run_id: null
 limits:
   max_candidates_per_source: 10000
-  request_timeout_sec: 30
+  request_timeout_sec: 3
   fetch_concurrency: 12
   fetch_pause_sec: 0.05
+  obey_robots: false
 quality:
   min_keyword_hits: 1
 sources:

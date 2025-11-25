@@ -1,4 +1,4 @@
-from crawl.core.fetch.fetcher import Fetcher
+from crawl.core.fetch.fetcher import Fetcher, FetcherConfig
 from crawl.core.models import Candidate
 import requests
 
@@ -21,7 +21,11 @@ def test_fetcher_respects_robots_override_flag(monkeypatch):
         return DummyResp(b"<html><title>ok</title><body>text</body></html>")
 
     session.get = _fake_get  # type: ignore[method-assign]
-    f = Fetcher(session=session, timeout=3)
+    f = Fetcher(
+        session=session,
+        timeout=3,
+        config=FetcherConfig(obey_robots=True),
+    )
     # Simulate robots disallow by forcing allowed() -> False
     f.robots.allowed = lambda _url: False  # type: ignore[attr-defined]
     cand = Candidate(
