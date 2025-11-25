@@ -7,6 +7,7 @@ from typing import Callable, Dict, Iterable, List, Mapping, Optional, Tuple, cas
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
+from urllib.parse import urlparse
 
 import requests
 from dotenv import load_dotenv
@@ -115,6 +116,29 @@ class UnifiedPipeline:
             return candidates[:max_total]
         return candidates
 
+    def _is_valid_url(self, url: str) -> bool:
+        raw = (url or "").strip()
+        if not raw:
+            return False
+        try:
+            parsed = urlparse(raw)
+        except Exception:
+            return False
+        # Try to recover simple host-only URLs by prepending scheme
+        if not parsed.scheme and not parsed.netloc and "://" not in raw:
+            try:
+                parsed = urlparse(f"http://{raw}")
+            except Exception:
+                return False
+        scheme = parsed.scheme.lower()
+        if scheme and scheme not in {"http", "https"}:
+            return False
+        if not parsed.netloc:
+            return False
+        if " " in raw:
+            return False
+        return True
+
     def discover(self) -> Dict[str, List[Candidate]]:
         discoveries: Dict[str, List[Candidate]] = {}
 
@@ -210,7 +234,7 @@ class UnifiedPipeline:
         unique_candidates: Dict[str, Candidate] = {}
         for source, candidates in discovered.items():
             for candidate in candidates:
-                if not candidate.url:
+                if not candidate.url or not self._is_valid_url(candidate.url):
                     continue
                 lowered = candidate.url.lower()
                 if lowered.endswith("/robots.txt") or lowered.endswith("robots.txt"):
@@ -298,6 +322,27 @@ class UnifiedPipeline:
                 extract_elapsed,
             )
 
+        def _safe_process_candidate(
+            cand: Candidate,
+        ) -> tuple[
+            Candidate,
+            Optional[FetchResult],
+            Optional[Document],
+            Optional[dict],
+            float,
+            float,
+        ]:
+            try:
+                return _process_candidate(cand)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Processing failed for url=%s error=%s",
+                    getattr(cand, "url", "<unknown>"),
+                    exc,
+                    exc_info=True,
+                )
+                return cand, None, None, None, 0.0, 0.0
+
         def _handle_result(
             res: tuple[
                 Candidate,
@@ -310,66 +355,80 @@ class UnifiedPipeline:
         ) -> None:
             nonlocal fetched, stored, duplicates, failed_fetch, quality_rejected
             nonlocal index_duplicates, extraction_failed, t_fetch, t_extract, t_store
-            (
-                cand,
-                fetch_result,
-                document,
-                quality_info,
-                fetch_elapsed,
-                extract_elapsed,
-            ) = res
-            t_fetch += fetch_elapsed
-            t_extract += extract_elapsed
-            if not fetch_result or not fetch_result.html:
-                failed_fetch += 1
-                return
-            fetched += 1
-            if not document:
-                if quality_info and quality_info.get("status") == "quality-reject":
-                    quality_rejected += 1
-                else:
-                    extraction_failed += 1
-                return
-            if document.extra is None:
-                document.extra = {}
-            fetch_meta = cast(dict, document.extra.setdefault("fetch", {}))
-            fetch_meta.update(
-                {
-                    "encoding": fetch_result.encoding,
-                    "status_code": fetch_result.status_code,
-                    "fetched_from": fetch_result.fetched_from,
-                }
-            )
             try:
-                if self.index.contains(document.id) or self.index.contains_url(
-                    document.url
-                ):
-                    duplicates += 1
-                    index_duplicates += 1
+                (
+                    cand,
+                    fetch_result,
+                    document,
+                    quality_info,
+                    fetch_elapsed,
+                    extract_elapsed,
+                ) = res
+                t_fetch += fetch_elapsed
+                t_extract += extract_elapsed
+                if not fetch_result or not fetch_result.html:
+                    failed_fetch += 1
                     return
-            except Exception:  # noqa: BLE001
-                pass
-            t2 = time.monotonic()
-            self.storage.append(document)
-            self.index.add(document.id)
-            self.index.add_url(document.url)
-            t_store += time.monotonic() - t2
-            stored += 1
-            if self.store_observer is not None:
+                fetched += 1
+                if not document:
+                    if quality_info and quality_info.get("status") == "quality-reject":
+                        quality_rejected += 1
+                    else:
+                        extraction_failed += 1
+                    return
+                if document.extra is None:
+                    document.extra = {}
+                fetch_meta = cast(dict, document.extra.setdefault("fetch", {}))
+                fetch_meta.update(
+                    {
+                        "encoding": fetch_result.encoding,
+                        "status_code": fetch_result.status_code,
+                        "fetched_from": fetch_result.fetched_from,
+                    }
+                )
                 try:
-                    self.store_observer(document, cand)
+                    if self.index.contains(document.id) or self.index.contains_url(
+                        document.url
+                    ):
+                        duplicates += 1
+                        index_duplicates += 1
+                        return
                 except Exception:  # noqa: BLE001
                     pass
+                t2 = time.monotonic()
+                self.storage.append(document)
+                self.index.add(document.id)
+                self.index.add_url(document.url)
+                t_store += time.monotonic() - t2
+                stored += 1
+                if self.store_observer is not None:
+                    try:
+                        self.store_observer(document, cand)
+                    except Exception:  # noqa: BLE001
+                        pass
+            except Exception as exc:  # noqa: BLE001
+                failed_fetch += 1
+                cand_url = "<unknown>"
+                try:
+                    cand_url = getattr(res[0], "url", cand_url)  # type: ignore[index]
+                except Exception:  # noqa: BLE001
+                    pass
+                logger.warning(
+                    "Result handling failed for url=%s error=%s",
+                    cand_url,
+                    exc,
+                    exc_info=True,
+                )
 
         if not task_candidates:
             pass
         elif self.fetch_concurrency <= 1 or len(task_candidates) == 1:
             for cand in tqdm(task_candidates, desc="Fetch+Extract", unit="doc"):
-                _handle_result(_process_candidate(cand))
+                _handle_result(_safe_process_candidate(cand))
         else:
             with ThreadPoolExecutor(max_workers=self.fetch_concurrency) as executor:
                 futures = [
-                    executor.submit(_process_candidate, cand)
+                    executor.submit(_safe_process_candidate, cand)
                     for cand in task_candidates
                 ]
                 for fut in tqdm(
@@ -378,7 +437,13 @@ class UnifiedPipeline:
                     desc="Fetch+Extract",
                     unit="doc",
                 ):
-                    _handle_result(fut.result())
+                    try:
+                        res = fut.result()
+                    except Exception as exc:  # noqa: BLE001
+                        failed_fetch += 1
+                        logger.warning("Worker crashed: %s", exc, exc_info=True)
+                        continue
+                    _handle_result(res)
 
         stats = PipelineStats(
             discovered={k: len(v) for k, v in discovered.items()},
