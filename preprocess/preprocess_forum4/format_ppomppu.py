@@ -8,8 +8,12 @@ from typing import Iterator
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 INPUT_PATH = BASE_DIR / "data_crawl" / "forum_ppomppu.jsonl"
-# 🔥 출력 경로를 preprocessing_data 로 변경
-OUTPUT_PATH = BASE_DIR / "preprocess" / "preprocessing_data" / "forum_ppomppu_comments_formatted.jsonl"
+OUTPUT_PATH = (
+    BASE_DIR
+    / "preprocess"
+    / "preprocessing_data"
+    / "forum_ppomppu_comments_formatted.jsonl"
+)
 ENCODINGS = ("utf-8", "utf-8-sig", "cp949", "euc-kr", "latin-1")
 STOP_EXACT = {
     "목록보기",
