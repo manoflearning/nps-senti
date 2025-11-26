@@ -12,9 +12,14 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 INPUT_PATH = BASE_DIR / "data_crawl" / "forum_theqoo.jsonl"
 
 # 출력: 루트/preprocess/preprocessing_data/forum_theqoo_comments_formatted.jsonl
-OUTPUT_PATH = BASE_DIR / "preprocess" / "preprocessing_data" / "forum_theqoo_comments_formatted.jsonl"
+OUTPUT_PATH = (
+    BASE_DIR
+    / "preprocess"
+    / "preprocessing_data"
+    / "forum_theqoo_comments_formatted.jsonl"
+)
 
-# 🔥 반드시 read_jsonl보다 위에 정의되어 있어야 함
+# 반드시 read_jsonl보다 위에 정의되어 있어야 함
 ENCODINGS = ("utf-8", "utf-8-sig", "cp949", "euc-kr", "latin-1")
 
 
