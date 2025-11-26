@@ -75,6 +75,7 @@ def collect_comment_rows(
 
 # ---------- mlbpark ----------
 
+
 def iter_mlbpark_rows() -> Iterator[dict]:
     path = DATA_DIR / "forum_mlbpark.jsonl"
     for post in read_jsonl(path):
@@ -101,9 +102,7 @@ def iter_mlbpark_rows() -> Iterator[dict]:
 
         # 댓글 레코드들
         comments = (
-            post.get("extra", {})
-            .get("forum", {})
-            .get("comments")
+            post.get("extra", {}).get("forum", {}).get("comments")
             if isinstance(post.get("extra"), dict)
             else []
         )
@@ -113,6 +112,7 @@ def iter_mlbpark_rows() -> Iterator[dict]:
 
 
 # ---------- bobaedream ----------
+
 
 def first_paragraph(text: str | None) -> str | None:
     if not text:
@@ -153,9 +153,7 @@ def iter_bobaedream_rows() -> Iterator[dict]:
 
         # 댓글 레코드들
         comments = (
-            post.get("extra", {})
-            .get("forum", {})
-            .get("comments")
+            post.get("extra", {}).get("forum", {}).get("comments")
             if isinstance(post.get("extra"), dict)
             else []
         )
@@ -165,6 +163,7 @@ def iter_bobaedream_rows() -> Iterator[dict]:
 
 
 # ---------- dcinside (이미 flatten 된 파일) ----------
+
 
 def iter_dcinside_rows() -> Iterator[dict]:
     path = DATA_DIR / "forum_dcinside_post_plus_comments_combined_with_year.jsonl"
@@ -195,7 +194,9 @@ def iter_dcinside_rows() -> Iterator[dict]:
             comment_text = (entry.get("comment_text") or "").strip()
             if not comment_text:
                 continue
-            comment_id = str(entry.get("comment_id") or f"{post_id}_comment_{comment_index}")
+            comment_id = str(
+                entry.get("comment_id") or f"{post_id}_comment_{comment_index}"
+            )
             yield {
                 "id": comment_id,
                 "source": "dcinside",
@@ -224,7 +225,7 @@ FORMATTERS: Dict[str, Callable[[], Iterator[dict]]] = {
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-       description="Format forum_* JSONL files into a combined dataset."
+        description="Format forum_* JSONL files into a combined dataset."
     )
     parser.add_argument(
         "--sources",
