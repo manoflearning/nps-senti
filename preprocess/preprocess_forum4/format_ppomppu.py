@@ -1,4 +1,4 @@
-"""Rebuild new_forum_ppomppu_comments_formatted.jsonl with cleaned post bodies."""
+# preprocess/preprocess_forum4/format_ppomppu.py
 from __future__ import annotations
 
 import json
@@ -6,9 +6,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterator
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parents[2]
 INPUT_PATH = BASE_DIR / "data_crawl" / "forum_ppomppu.jsonl"
-OUTPUT_PATH = BASE_DIR / "data_crawl" / "new_forum_ppomppu_comments_formatted.jsonl"
+# 🔥 출력 경로를 preprocessing_data 로 변경
+OUTPUT_PATH = BASE_DIR / "preprocess" / "preprocessing_data" / "forum_ppomppu_comments_formatted.jsonl"
 ENCODINGS = ("utf-8", "utf-8-sig", "cp949", "euc-kr", "latin-1")
 STOP_EXACT = {
     "목록보기",
@@ -129,7 +130,10 @@ def clean_post_text(raw_text: str, title: str, comment_phrases: set[str]) -> str
             if body:
                 break
             continue
-        if comment_phrases and stripped in comment_phrases:
+        # Only stop when we encounter a line that matches a comment phrase
+        # if we've already collected some body text. This avoids dropping
+        # the entire post when the first line is also present in comments.
+        if comment_phrases and stripped in comment_phrases and body:
             break
         body.append(stripped)
     cleaned = "\n".join(normalize_blank_lines(body)).strip()
@@ -216,9 +220,12 @@ def iter_formatted_rows() -> Iterator[dict]:
                 "doc_type": "comment",
                 "parent_id": post_id,
                 "title": title,
+                "text": body or None,
                 "lang": lang,
                 "published_at": published_at,
                 "comment_index": idx,
+                # `text` for comment records should mirror the post body
+                
                 "comment_text": comment_text,
                 "comment_publishedAt": comment_time,
             }
