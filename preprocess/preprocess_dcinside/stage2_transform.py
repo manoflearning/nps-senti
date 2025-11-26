@@ -8,6 +8,7 @@ from .stage1_models_io import RawPost, RawComment, FlattenedRecord
 
 # ---------- 제목 클리닝 ----------
 
+
 def clean_dcinside_title(title: str) -> str:
     """
     디시인사이드 국민연금 갤러리 제목에서
@@ -23,6 +24,7 @@ def clean_dcinside_title(title: str) -> str:
 
 
 # ---------- 게시글 기준 시각 처리 ----------
+
 
 def _parse_iso_datetime(value: str) -> Optional[datetime]:
     """
@@ -57,7 +59,10 @@ def resolve_article_datetime(post: RawPost) -> tuple[Optional[datetime], Optiona
 
 # ---------- 댓글 시각 파싱 ----------
 
-def parse_comment_datetime(comment_raw: str, article_dt: Optional[datetime]) -> Optional[datetime]:
+
+def parse_comment_datetime(
+    comment_raw: str, article_dt: Optional[datetime]
+) -> Optional[datetime]:
     """
     댓글 시각 문자열을 datetime으로 파싱한다.
     지원 패턴:
@@ -81,7 +86,7 @@ def parse_comment_datetime(comment_raw: str, article_dt: Optional[datetime]) -> 
     except Exception:
         return None
 
-    year = (article_dt.year if article_dt is not None else datetime.utcnow().year)
+    year = article_dt.year if article_dt is not None else datetime.utcnow().year
     return datetime(
         year=year,
         month=mmdd.month,
@@ -104,6 +109,7 @@ def format_comment_datetime(dt_value: Optional[datetime]) -> Optional[str]:
 
 # ---------- 텍스트 전처리 ----------
 
+
 def center_truncate(text: str, max_len: int = 200) -> str:
     """
     너무 긴 텍스트는 앞/뒤를 남기고 가운데를 "..."로 줄인다.
@@ -117,7 +123,9 @@ def center_truncate(text: str, max_len: int = 200) -> str:
     return text[:head] + "..." + text[-tail:]
 
 
-def build_combined_text(clean_title: str, comment_text: str | None, max_comment_len: int = 200) -> str:
+def build_combined_text(
+    clean_title: str, comment_text: str | None, max_comment_len: int = 200
+) -> str:
     """
     최종 combined_text 규칙:
     - 댓글이 없으면: 제목만
@@ -134,6 +142,7 @@ def build_combined_text(clean_title: str, comment_text: str | None, max_comment_
 
 
 # ---------- 댓글 id 선택 로직 ----------
+
 
 def choose_comment_id(post: RawPost, comment: RawComment, idx: int) -> str:
     """
@@ -158,6 +167,7 @@ def choose_comment_id(post: RawPost, comment: RawComment, idx: int) -> str:
 
 
 # ---------- 핵심: RawPost 하나 → FlattenedRecord 여러 개 ----------
+
 
 def flatten_post(post: RawPost, max_comment_len: int = 200) -> List[FlattenedRecord]:
     """
@@ -215,10 +225,10 @@ def flatten_post(post: RawPost, max_comment_len: int = 200) -> List[FlattenedRec
 
         records.append(
             FlattenedRecord(
-                id=comment_id,           # ✅ 댓글 레코드 id = 댓글 사람/식별자
+                id=comment_id,  # ✅ 댓글 레코드 id = 댓글 사람/식별자
                 source=post.source,
                 doc_type="comment",
-                parent_id=post.id,       # ✅ 원글 id는 parent_id로 유지
+                parent_id=post.id,  # ✅ 원글 id는 parent_id로 유지
                 title=clean_title_str,
                 lang=post.lang or "ko",
                 published_at=article_dt_str,

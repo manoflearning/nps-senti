@@ -162,7 +162,9 @@ def parse_post_datetime(raw: str | None) -> datetime | None:
     return None
 
 
-def normalize_comment_timestamp(post_dt: datetime | None, comment_time: str | None) -> str | None:
+def normalize_comment_timestamp(
+    post_dt: datetime | None, comment_time: str | None
+) -> str | None:
     if not comment_time:
         return None
     comment_time = comment_time.strip()
@@ -192,12 +194,7 @@ def iter_formatted_rows() -> Iterator[dict]:
         lang = post.get("lang") or "ko"
         published_at = post.get("published_at") or post.get("date")
         post_dt = parse_post_datetime(published_at)
-        comments_raw = (
-            post.get("extra", {})
-            .get("forum", {})
-            .get("comments")
-            or []
-        )
+        comments_raw = post.get("extra", {}).get("forum", {}).get("comments") or []
         comment_phrases = collect_comment_phrases(comments_raw)
         body = clean_post_text(post.get("text") or "", title, comment_phrases)
         yield {
@@ -217,7 +214,9 @@ def iter_formatted_rows() -> Iterator[dict]:
         for idx, comment in enumerate(comments_raw):
             comment_id = str(comment.get("id") or f"{post_id}_comment_{idx}")
             comment_text = (comment.get("text") or "").strip() or None
-            comment_time = normalize_comment_timestamp(post_dt, comment.get("publishedAt"))
+            comment_time = normalize_comment_timestamp(
+                post_dt, comment.get("publishedAt")
+            )
             yield {
                 "id": comment_id,
                 "source": "ppomppu",
@@ -229,7 +228,6 @@ def iter_formatted_rows() -> Iterator[dict]:
                 "published_at": published_at,
                 "comment_index": idx,
                 # `text` for comment records should mirror the post body
-                
                 "comment_text": comment_text,
                 "comment_publishedAt": comment_time,
             }
