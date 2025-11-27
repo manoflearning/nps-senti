@@ -200,7 +200,7 @@ def flatten_post(post: RawPost, max_comment_len: int = 200) -> List[FlattenedRec
             title=clean_title_str,
             lang=post.lang or "ko",
             published_at=article_dt_str,
-            text=post_body,          # 게시글 본문
+            text=post_body,  # 게시글 본문
             comment_index=None,
             comment_text=None,
             comment_publishedAt=None,
@@ -225,9 +225,9 @@ def flatten_post(post: RawPost, max_comment_len: int = 200) -> List[FlattenedRec
                 title=clean_title_str,
                 lang=post.lang or "ko",
                 published_at=article_dt_str,
-                text=post_body,          # ✅ post와 동일한 본문
+                text=post_body,  # ✅ post와 동일한 본문
                 comment_index=idx,
-                comment_text=c.text,     # ✅ 댓글 내용은 여기만
+                comment_text=c.text,  # ✅ 댓글 내용은 여기만
                 comment_publishedAt=comment_dt_str,
             )
         )
