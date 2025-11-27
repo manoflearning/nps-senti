@@ -183,6 +183,7 @@ SYSTEM_PROMPT_NPS = dedent(
     """
 ).strip()
 
+
 def build_user_message(comment: str, source: str) -> str:
     """
     모델에 넘길 user 메시지 포맷.

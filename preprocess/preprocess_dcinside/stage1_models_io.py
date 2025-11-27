@@ -27,9 +27,9 @@ class RawPost:
     source: str
     title: str
     lang: str
-    published_at: str          # 게시 시각(있을 수도, 없을 수도 있음)
-    crawl_fetched_at: str      # 크롤링 시각(대체값)
-    raw_text: str              # 원본 text (본문 + 사이트 크롬 + 댓글 등 섞여 있음)
+    published_at: str  # 게시 시각(있을 수도, 없을 수도 있음)
+    crawl_fetched_at: str  # 크롤링 시각(대체값)
+    raw_text: str  # 원본 text (본문 + 사이트 크롬 + 댓글 등 섞여 있음)
     comments: List[RawComment]
     extra: Dict[str, Any]
 
@@ -62,11 +62,11 @@ class FlattenedRecord:
 
     id: str
     source: str
-    doc_type: str                  # "post" or "comment"
-    parent_id: Optional[str]       # 댓글이면 원글 id, 본문이면 None
-    title: str                     # 클린 제목
+    doc_type: str  # "post" or "comment"
+    parent_id: Optional[str]  # 댓글이면 원글 id, 본문이면 None
+    title: str  # 클린 제목
     lang: str
-    published_at: Optional[str]    # "YYYY-MM-DDTHH:MM:SS+00:00"
+    published_at: Optional[str]  # "YYYY-MM-DDTHH:MM:SS+00:00"
 
     # 게시글 본문 텍스트 (post/comment 모두 같은 값)
     text: Optional[str]
