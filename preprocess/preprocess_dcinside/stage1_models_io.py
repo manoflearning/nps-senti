@@ -1,4 +1,3 @@
-# preprocess/preprocess_dcinside/stage1_models_io.py
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -12,7 +11,6 @@ import json
 
 @dataclass
 class RawComment:
-    id: str
     text: str
     published_at_raw: str  # 예: "11.13 17:19:44" 또는 "2024.05.13 11:16:55"
     meta: Dict[str, Any]
@@ -22,16 +20,16 @@ class RawComment:
 class RawPost:
     """
     forum_dcinside.jsonl 한 줄을 구조화한 형태.
-    extra.forum.comments 에서 댓글들을 가져온다.
+    extra.forum.comments 에서 댓글 목록을 가져온다.
     """
 
     id: str
     source: str
     title: str
     lang: str
-    published_at: str  # 게시 시각(있을 수도, 없을 수도 있음)
-    crawl_fetched_at: str  # 크롤링 시각(대체값)
-    raw_text: str
+    published_at: str          # 게시 시각(있을 수도, 없을 수도 있음)
+    crawl_fetched_at: str      # 크롤링 시각(대체값)
+    raw_text: str              # 원본 text (본문 + 사이트 크롬 + 댓글 등 섞여 있음)
     comments: List[RawComment]
     extra: Dict[str, Any]
 
@@ -48,21 +46,40 @@ class FlattenedRecord:
     - comment_index:
         * 본문 레코드   → None
         * 댓글 레코드   → 0,1,2,...
+
+    중요한 필드:
+      - id            : post 또는 comment 식별자
+      - source        : "dcinside"
+      - doc_type      : "post" / "comment"
+      - parent_id     : 댓글이면 원글 id, 본문이면 None
+      - title         : 클린된 제목
+      - lang          : 언어 (대부분 "ko")
+      - published_at  : 게시글 기준 시각 (ISO 문자열)
+      - text          : ✅ 항상 "댓글 제거된 게시글 본문" (post/comment 공통)
+      - comment_text  : 댓글 텍스트 (doc_type="comment" 일 때만 사용)
+      - comment_publishedAt : 댓글 시각 "YYYY-MM-DD HH:MM:SS"
     """
 
     id: str
     source: str
-    doc_type: str  # "post" or "comment"
-    parent_id: Optional[str]  # 댓글이면 원글 id, 본문이면 None
-    title: str  # 클린 제목
+    doc_type: str                  # "post" or "comment"
+    parent_id: Optional[str]       # 댓글이면 원글 id, 본문이면 None
+    title: str                     # 클린 제목
     lang: str
-    published_at: Optional[str]  # "YYYY-MM-DDTHH:MM:SS+00:00"
+    published_at: Optional[str]    # "YYYY-MM-DDTHH:MM:SS+00:00"
+
+    # 게시글 본문 텍스트 (post/comment 모두 같은 값)
+    text: Optional[str]
+
     comment_index: Optional[int]
     comment_text: Optional[str]
-    comment_publishedAt: Optional[str]  # "YYYY-MM-DD HH:MM:SS"
-    combined_text: Optional[str] = None  # 제목 + (선택적으로 댓글 내용)
+    comment_publishedAt: Optional[str]
 
     def to_dict(self) -> Dict[str, Any]:
+        """
+        최종 JSONL로 내보낼 필드들.
+        (요청에 따라 combined_text는 완전히 제거)
+        """
         return {
             "id": self.id,
             "source": self.source,
@@ -71,6 +88,7 @@ class FlattenedRecord:
             "title": self.title,
             "lang": self.lang,
             "published_at": self.published_at,
+            "text": self.text,
             "comment_index": self.comment_index,
             "comment_text": self.comment_text,
             "comment_publishedAt": self.comment_publishedAt,
@@ -112,12 +130,12 @@ def load_raw_posts(path: str | Path) -> Iterator[RawPost]:
                         continue
                     text = c.get("text") or ""
                     published_raw = c.get("publishedAt") or ""
+                    # text, publishedAt 외 나머지 메타(작성자, id, depth 등)를 meta로 묶어둠
                     meta = {
                         k: v for k, v in c.items() if k not in ("text", "publishedAt")
                     }
                     comments.append(
                         RawComment(
-                            id=str(c.get("id", "")),
                             text=str(text),
                             published_at_raw=str(published_raw),
                             meta=meta,
