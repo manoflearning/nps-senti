@@ -1,4 +1,3 @@
-# preprocess/preprocess_gdelt/stage3_cli.py
 from __future__ import annotations
 
 import argparse
@@ -35,8 +34,9 @@ def preprocess_gdelt(
     - 텍스트 클리닝
     - (본문 텍스트) 길이 기준 필터링
     - 언어 필터 (ko/en 등)
-    - 중복 제거 (id 또는 title+sourcecountry 기준)
-    - 최종 출력에서는 domain / published_at_source / seendate 제거
+    - 중복 제거 (id 또는 title 기준)
+    - 최종 출력에서는 sourcecountry, length, domain, seendate 등 중간 필드를 제거하고
+      id / source / lang / title / text / published_at만 남긴다.
     """
     repo_root = Path(__file__).resolve().parents[2]
 
@@ -110,7 +110,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         "--output",
         "-o",
         required=True,
-        help="출력 JSONL 경로 (예: preprocess/preprocessing_data/gdelt_preprocessed_all.jsonl)",
+        help="출력 JSONL 경로 (예: preprocess/preprocessing_data/gdelt.jsonl)",
     )
     parser.add_argument(
         "--min-length",

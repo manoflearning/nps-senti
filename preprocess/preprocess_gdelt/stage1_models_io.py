@@ -1,4 +1,3 @@
-# preprocess/preprocess_gdelt/stage1_models_io.py
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -47,12 +46,15 @@ class FlattenedGdeltArticle:
     """
     전처리 완료 후 감성분석에 바로 쓰일 최종 모델.
 
-    ⚠️ 최종 출력 JSONL에서는 다음 필드를 제거한다:
-      - domain
-      - published_at_source
-      - seendate
+    ✅ 최종 출력 JSONL에는 아래 필드만 포함한다:
+      - id
+      - source
+      - lang
+      - title
+      - text
+      - published_at
 
-    따라서 to_dict()에는 포함하지 않음.
+    sourcecountry, length 같은 중간/분석용 필드는 완전히 제거한다.
     """
 
     id: str
@@ -62,15 +64,12 @@ class FlattenedGdeltArticle:
     title: str
     text: str
 
-    published_at: Optional[str]  # seendate 기반으로 채운 최종 시각
-    sourcecountry: Optional[str]
-
-    length: int  # text 길이(문자 기준)
+    # 원본 published_at 기반 최종 시각 (seendate fallback 사용하지 않음)
+    published_at: Optional[str]
 
     def to_dict(self) -> Dict[str, Any]:
         """
         최종 JSONL로 나갈 때는 진짜 필요한 필드만 남긴다.
-        domain, published_at_source, seendate 같은 중간 필드는 완전히 제거.
         """
         return {
             "id": self.id,
@@ -79,8 +78,6 @@ class FlattenedGdeltArticle:
             "title": self.title,
             "text": self.text,
             "published_at": self.published_at,
-            "sourcecountry": self.sourcecountry,
-            "length": self.length,
         }
 
 
@@ -129,9 +126,7 @@ def load_raw_gdelt(path: str | Path) -> Iterator[RawGdeltArticle]:
 
             published_at = str(obj.get("published_at") or "") or None
 
-            # seendate 후보 2곳:
-            # 1) discovered_via.seendate
-            # 2) extra.gdelt.seendate
+            # seendate 후보 2곳 (지금은 flatten 단계에서 fallback으로 쓰지 않지만, raw에는 남겨둔다)
             seendate = None
             dv_seendate = discovered.get("seendate")
             if dv_seendate:

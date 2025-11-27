@@ -1,4 +1,3 @@
-# preprocess/preprocess_gdelt/stage2_transform.py
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -17,71 +16,36 @@ logger = logging.getLogger(__name__)
 
 def choose_published_at(
     published_at: Optional[str],
-    seendate: Optional[str],
+    seendate: Optional[str],  # 현재는 사용하지 않지만, 시그니처는 유지
 ) -> Optional[str]:
     """
     최종 published_at 문자열 선택.
 
-    우선순위:
-      1. published_at (있고 파싱 가능하면)
-      2. seendate (예: 20251115T150000Z)
-    출력은 "YYYY-MM-DDTHH:MM:SSZ" (UTC 기준 ISO8601) 형태로 맞춘다.
+    ✅ 지금은 원본 published_at만 사용하고, seendate는 사용하지 않는다.
+    - published_at이 ISO8601 형식이면 UTC 기준 "YYYY-MM-DDTHH:MM:SSZ" 로 정규화
+    - 파싱 실패하면 strip만 한 원본 문자열을 그대로 사용
     """
 
-    # 1) published_at이 이미 ISO 형식으로 들어온 경우
-    def _normalize_iso(s: str) -> Optional[str]:
-        if not s:
-            return None
-        s = s.strip()
-        if not s:
-            return None
-        try:
-            # 'Z'를 포함하거나, 타임존 없는 경우 모두 처리
-            if s.endswith("Z"):
-                dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
-            else:
-                dt = datetime.fromisoformat(s)
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-            dt_utc = dt.astimezone(timezone.utc)
-            return dt_utc.replace(microsecond=0).isoformat().replace("+00:00", "Z")
-        except Exception:
-            return None
+    if not published_at:
+        return None
 
-    # 2) GDELT seendate (예: 20251115T150000Z, 20251115T150000 등)
-    def _parse_seendate(s: str) -> Optional[str]:
-        s = s.strip()
-        if not s:
-            return None
-        # 형식: YYYYMMDDTHHMMSSZ? 또는 YYYYMMDDTHHMMSS
-        try:
-            if s.endswith("Z"):
-                s_noz = s[:-1]
-            else:
-                s_noz = s
-            if len(s_noz) != 15:  # 8(date) + 1(T) + 6(time)
-                return None
-            date_part = s_noz[:8]
-            time_part = s_noz[9:]
-            dt = datetime.strptime(date_part + time_part, "%Y%m%d%H%M%S")
-            dt = dt.replace(tzinfo=timezone.utc)
-            return dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
-        except Exception:
-            return None
+    s = published_at.strip()
+    if not s:
+        return None
 
-    # 1) published_at 우선
-    if published_at:
-        norm = _normalize_iso(published_at)
-        if norm is not None:
-            return norm
-
-    # 2) seendate 이용
-    if seendate:
-        norm = _parse_seendate(seendate)
-        if norm is not None:
-            return norm
-
-    return None
+    try:
+        # 'Z'를 포함하거나, 타임존 없는 경우 모두 처리
+        if s.endswith("Z"):
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        else:
+            dt = datetime.fromisoformat(s)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+        dt_utc = dt.astimezone(timezone.utc)
+        return dt_utc.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    except Exception:
+        # ISO 파싱이 안 되면, 그냥 정리된 원본 문자열을 반환
+        return s
 
 
 # ---------- 텍스트 클리닝 ----------
@@ -133,10 +97,10 @@ def deduplicate_records(
     GDELT 기사 중복 제거.
 
     기준:
-      - key = id (있으면)
-      - id가 비어 있으면 (사실상 거의 없겠지만) title+sourcecountry 조합 사용
+      - id가 있으면 id 기준
+      - id가 비어 있으면 title 기준
     같은 key가 여러 개면:
-      - text 길이(length)가 더 긴 기사 선택
+      - text 길이가 더 긴 기사 선택
     """
     chosen: Dict[tuple, FlattenedGdeltArticle] = {}
     order: List[tuple] = []
@@ -144,7 +108,7 @@ def deduplicate_records(
     def make_key(rec: FlattenedGdeltArticle) -> tuple:
         if rec.id:
             return ("id", rec.id)
-        return ("title_sourcecountry", rec.title or "", rec.sourcecountry or "")
+        return ("title", rec.title or "")
 
     for rec in records:
         key = make_key(rec)
@@ -153,7 +117,7 @@ def deduplicate_records(
             order.append(key)
         else:
             prev = chosen[key]
-            if rec.length > prev.length:
+            if len(rec.text) > len(prev.text):
                 chosen[key] = rec
 
     if len(order) != len(chosen):
@@ -188,6 +152,7 @@ def flatten_article(
     if max_length is not None and length > max_length:
         return None
 
+    # ✅ published_at만 사용, seendate는 fallback으로 쓰지 않는다.
     published_at_iso = choose_published_at(raw.published_at, raw.seendate)
 
     return FlattenedGdeltArticle(
@@ -197,6 +162,4 @@ def flatten_article(
         title=title,
         text=text_clean,
         published_at=published_at_iso,
-        sourcecountry=raw.sourcecountry,
-        length=length,
     )
