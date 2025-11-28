@@ -411,9 +411,22 @@ class Extractor:
         except Exception as exc:  # noqa: BLE001
             logger.debug("Forum augmentation failed: %s", exc)
 
-        lang = self._detect_lang(extraction.text)
+        # If body is empty, allow quality to lean on comments-only content
+        quality_text = extraction.text
+        if not quality_text and isinstance(candidate.extra, dict):
+            forum_meta = candidate.extra.get("forum") or {}
+            comments = (
+                forum_meta.get("comments") if isinstance(forum_meta, dict) else []
+            )
+            if isinstance(comments, list) and comments:
+                parts = [c.get("text", "") for c in comments if isinstance(c, dict)]
+                quality_text = "\n".join(p for p in parts if p)
+
+        lang = self._detect_lang(
+            quality_text or extraction.title or candidate.title or ""
+        )
         quality = self._build_quality(
-            extraction.text,
+            quality_text or "",
             lang,
             title=extraction.title or candidate.title,
         )
@@ -698,8 +711,8 @@ class Extractor:
                         text = self._clean_dcinside_body(text)
                     if len(text) >= 3:
                         return text
-                    # If dcinside body is image-only, fall back to img alt/src to avoid HTML fallback
-                    if site == "dcinside":
+                    # If body is image-only, fall back to img alt/src to avoid HTML fallback
+                    if site in {"dcinside", "theqoo"}:
                         imgs = el.select("img")
                         parts = []
                         for img in imgs:
@@ -710,7 +723,11 @@ class Extractor:
                                 src = img.get("src")
                                 if src and src.strip():
                                     parts.append(src.strip())
-                        img_text = self._clean_dcinside_body(" ".join(parts))
+                        img_text = " ".join(parts).strip()
+                        if site == "dcinside":
+                            img_text = self._clean_dcinside_body(img_text)
+                        else:
+                            img_text = self._clean_ws(img_text)
                         if img_text:
                             return img_text
             return None
