@@ -242,9 +242,7 @@ def flatten_video_to_comments(
             continue
 
         comment_published_raw = (
-            c.get("publishedAt")
-            or c.get("published_at")
-            or c.get("published")
+            c.get("publishedAt") or c.get("published_at") or c.get("published")
         )
         comment_published = _normalize_iso_utc(comment_published_raw)
 

@@ -8,7 +8,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -256,6 +256,7 @@ def sort_rows(rows: List[UnifiedRow]) -> List[UnifiedRow]:
       2) 없으면 published_at
       3) 그래도 없으면 원래 순서 유지
     """
+
     def sort_key(idx_row: Tuple[int, UnifiedRow]):
         idx, r = idx_row
         dt_comment = parse_iso_for_sort(r.comment_publishedAt)
