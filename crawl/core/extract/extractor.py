@@ -411,9 +411,22 @@ class Extractor:
         except Exception as exc:  # noqa: BLE001
             logger.debug("Forum augmentation failed: %s", exc)
 
-        lang = self._detect_lang(extraction.text)
+        # If body is empty, allow quality to lean on comments-only content
+        quality_text = extraction.text
+        if not quality_text and isinstance(candidate.extra, dict):
+            forum_meta = candidate.extra.get("forum") or {}
+            comments = (
+                forum_meta.get("comments") if isinstance(forum_meta, dict) else []
+            )
+            if isinstance(comments, list) and comments:
+                parts = [c.get("text", "") for c in comments if isinstance(c, dict)]
+                quality_text = "\n".join(p for p in parts if p)
+
+        lang = self._detect_lang(
+            quality_text or extraction.title or candidate.title or ""
+        )
         quality = self._build_quality(
-            extraction.text,
+            quality_text or "",
             lang,
             title=extraction.title or candidate.title,
         )
@@ -654,7 +667,9 @@ class Extractor:
         txt = el.get_text(" ", strip=True)
         return txt.strip() if txt else None
 
-    def _extract_forum_body_text(self, site: str, soup) -> Optional[str]:  # type: ignore[no-untyped-def]
+    def _extract_forum_body_text(  # type: ignore[no-untyped-def]
+        self, site: str, soup, html: Optional[str] = None
+    ) -> Optional[str]:
         selectors = {
             "dcinside": [
                 "div.write_div",
@@ -673,6 +688,7 @@ class Extractor:
                 "div#article_1",
             ],
             "ppomppu": [
+                "td.board-contents",
                 "div#writeContents",
                 "div.mid-text-area",
                 "div.memo_content",
@@ -684,30 +700,53 @@ class Extractor:
                 "div.view_cont",
             ],
         }
-        for sel in selectors.get(site, []):
-            el = soup.select_one(sel)
-            if el:
-                text_raw = el.get_text(" ", strip=True)
-                text = self._clean_ws(text_raw)
-                if site == "dcinside":
-                    text = self._clean_dcinside_body(text)
-                if len(text) >= 3:
-                    return text
-                # If dcinside body is image-only, fall back to img alt/src to avoid HTML fallback
-                if site == "dcinside":
-                    imgs = el.select("img")
-                    parts = []
-                    for img in imgs:
-                        alt = img.get("alt")
-                        if alt and alt.strip():
-                            parts.append(alt.strip())
+
+        def _extract_with_soup(root) -> Optional[str]:  # type: ignore[no-untyped-def]
+            for sel in selectors.get(site, []):
+                el = root.select_one(sel)
+                if el:
+                    text_raw = el.get_text(" ", strip=True)
+                    text = self._clean_ws(text_raw)
+                    if site == "dcinside":
+                        text = self._clean_dcinside_body(text)
+                    if len(text) >= 3:
+                        return text
+                    # If body is image-only, fall back to img alt/src to avoid HTML fallback
+                    if site in {"dcinside", "theqoo"}:
+                        imgs = el.select("img")
+                        parts = []
+                        for img in imgs:
+                            alt = img.get("alt")
+                            if alt and alt.strip():
+                                parts.append(alt.strip())
+                            else:
+                                src = img.get("src")
+                                if src and src.strip():
+                                    parts.append(src.strip())
+                        img_text = " ".join(parts).strip()
+                        if site == "dcinside":
+                            img_text = self._clean_dcinside_body(img_text)
                         else:
-                            src = img.get("src")
-                            if src and src.strip():
-                                parts.append(src.strip())
-                    img_text = self._clean_dcinside_body(" ".join(parts))
-                    if img_text:
-                        return img_text
+                            img_text = self._clean_ws(img_text)
+                        if img_text:
+                            return img_text
+            return None
+
+        text = _extract_with_soup(soup)
+        if text:
+            return text
+
+        # Some ppomppu pages use malformed duplicate class attributes that html.parser
+        # drops; retry with lxml parser when raw HTML is available.
+        if site == "ppomppu" and html:
+            try:
+                from bs4 import BeautifulSoup  # type: ignore
+
+                soup_lxml = BeautifulSoup(html, "lxml")
+            except Exception:  # noqa: BLE001
+                return None
+            return _extract_with_soup(soup_lxml)
+
         return None
 
     def _extract_forum_title(self, site: str, soup) -> Optional[str]:  # type: ignore[no-untyped-def]
@@ -1719,7 +1758,7 @@ class Extractor:
         soup = BeautifulSoup(html, "html.parser")
 
         site = (candidate.source or "").lower()
-        body_text = self._extract_forum_body_text(site, soup)
+        body_text = self._extract_forum_body_text(site, soup, html)
         author = self._extract_forum_author(site, soup)
         published = extraction.published_at or self._extract_forum_published(
             site, soup, html

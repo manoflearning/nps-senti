@@ -26,6 +26,7 @@ class CrawlLimits:
     fetch_concurrency: int = 4
     fetch_pause_sec: float = 0.1
     obey_robots: bool = False
+    per_host_pause_sec: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -178,6 +179,11 @@ def load_config(
         fetch_concurrency=int(limits_cfg.get("fetch_concurrency", 8)),
         fetch_pause_sec=float(limits_cfg.get("fetch_pause_sec", 0.1)),
         obey_robots=bool(limits_cfg.get("obey_robots", False)),
+        per_host_pause_sec={
+            str(host).strip().lower(): max(0.0, float(pause))
+            for host, pause in (limits_cfg.get("per_host_pause_sec", {}) or {}).items()
+            if str(host).strip()
+        },
     )
 
     quality_cfg = params.get("quality", {})

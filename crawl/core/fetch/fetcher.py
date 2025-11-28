@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
+from threading import Lock
 
 import requests
 import os
@@ -29,6 +30,7 @@ class FetcherConfig:
     pause_seconds: float = 0.5
     allow_live_fetch: bool = True
     obey_robots: bool = False
+    per_host_pause_sec: dict[str, float] = field(default_factory=dict)
 
 
 class RobotsCache:
@@ -86,6 +88,33 @@ class Fetcher:
         self.robots: RobotsCache | None = None
         if self.config.obey_robots:
             self.robots = RobotsCache(session, timeout, self.config.user_agent)
+        self._host_locks: dict[str, Lock] = {}
+        self._last_fetch_at: dict[str, float] = {}
+
+    def _normalize_host(self, url: str) -> Optional[str]:
+        try:
+            parsed = urlparse(url)
+        except Exception:  # noqa: BLE001
+            return None
+        host = parsed.netloc.lower()
+        if not host:
+            return None
+        if ":" in host:
+            host = host.split(":", 1)[0]
+        if host.startswith("www."):
+            host = host[4:]
+        return host or None
+
+    def _host_pause(self, host: Optional[str]) -> Optional[float]:
+        if not host:
+            return None
+        pause_map = self.config.per_host_pause_sec or {}
+        if host in pause_map:
+            return pause_map[host]
+        for key, pause in pause_map.items():
+            if host.endswith(f".{key}"):
+                return pause
+        return None
 
     def _decode_bytes(
         self,
@@ -181,8 +210,24 @@ class Fetcher:
 
     def fetch(self, candidate: Candidate) -> Optional[FetchResult]:
         # Only live fetch (snapshots/CC removed)
+        host = self._normalize_host(candidate.url)
+        host_pause = self._host_pause(host) or 0.0
+        pause = max(self.config.pause_seconds, host_pause)
+
+        if host_pause > 0 and host:
+            lock = self._host_locks.setdefault(host, Lock())
+            with lock:
+                last = self._last_fetch_at.get(host, 0.0)
+                if last > 0:
+                    elapsed = time.monotonic() - last
+                    wait = pause - elapsed
+                    if wait > 0:
+                        time.sleep(wait)
+                result = self._fetch_live(candidate)
+                self._last_fetch_at[host] = time.monotonic()
+                return result
+
         result = self._fetch_live(candidate)
-        if result:
-            time.sleep(self.config.pause_seconds)
-            return result
-        return None
+        if result and pause > 0:
+            time.sleep(pause)
+        return result

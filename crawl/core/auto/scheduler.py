@@ -37,11 +37,16 @@ def _latest_month_start(now: Optional[datetime] = None) -> datetime:
     return _month_start(now)
 
 
-def _iter_recent_months(n: int, now: Optional[datetime] = None) -> List[str]:
+def _iter_recent_months(
+    n: int, now: Optional[datetime] = None, earliest: Optional[datetime] = None
+) -> List[str]:
     now = now or datetime.now(timezone.utc)
     cur = _month_start(now)
+    earliest_bucket = _month_start(earliest) if earliest else None
     buckets: List[str] = []
     for _ in range(n):
+        if earliest_bucket and cur < earliest_bucket:
+            break
         buckets.append(f"{cur.year:04d}-{cur.month:02d}")
         # go back one month
         prev_month = cur.month - 1 or 12
@@ -57,7 +62,9 @@ def compute_deficits(
     months_back: int,
     monthly_target_per_source: int,
 ) -> Tuple[List[str], Dict[str, Dict[str, int]]]:
-    recent_buckets = _iter_recent_months(months_back)
+    recent_buckets = _iter_recent_months(
+        months_back, earliest=base_config.time_window.start_date
+    )
     deficits: Dict[str, Dict[str, int]] = {}
     for bucket in recent_buckets:
         by_src = state.counts.get(bucket, {})
@@ -113,6 +120,7 @@ def plan_round(
     def _bucket_window(bucket: str) -> Tuple[datetime, datetime]:
         year, month = map(int, bucket.split("-"))
         start = datetime(year, month, 1, tzinfo=timezone.utc)
+        start = max(start, base_config.time_window.start_date)
         end = _next_month(start)
         if end > now:
             end = now
