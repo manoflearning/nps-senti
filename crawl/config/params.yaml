@@ -32,6 +32,8 @@ limits:
   fetch_concurrency: 12
   fetch_pause_sec: 0.05
   obey_robots: false
+  per_host_pause_sec:
+    dcinside.com: 2.5
 quality:
   min_keyword_hits: 1
 sources:
