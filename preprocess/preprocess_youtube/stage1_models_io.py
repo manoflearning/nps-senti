@@ -17,7 +17,9 @@ logger = logging.getLogger(__name__)
 class RawYoutubeVideo:
     """
     youtube.jsonl 한 줄을 구조화한 원본 모델.
-    (원본 필드들은 넉넉하게 들고 있고, 실제로 쓸지는 stage2에서 결정)
+
+    - 원본 필드는 넉넉하게 들고 있고
+    - 실제 어떤 컬럼을 쓸지는 stage2에서 결정한다.
     """
 
     id: str
@@ -25,38 +27,48 @@ class RawYoutubeVideo:
     url: str
     lang: str
 
-    # 상위 메타
+    # 상위 레벨 필드
     title_top: str
     text_top: str
     published_at_top: Optional[str]
 
     # extra.youtube.snippet
-    snippet_published_at: Optional[str]
     snippet_title: Optional[str]
     snippet_description: Optional[str]
-    channel_id: Optional[str]
-    channel_title: Optional[str]
-
-    # extra.youtube.contentDetails
-    duration_raw: Optional[str]
-
-    # extra.youtube.statistics
-    view_count_raw: Optional[str]
-    like_count_raw: Optional[str]
-    comment_count_raw: Optional[str]
+    snippet_published_at: Optional[str]
 
     # discovered_via
     keyword: Optional[str]
 
+    # 이 외 전체 extra (댓글 포함)
     extra: Dict[str, Any]
 
 
 @dataclass
-class FlattenedYoutubeVideo:
+class FlattenedYoutubeComment:
     """
-    전처리 완료 후 감성분석에 바로 쓰일 최소 필드만 남긴 최종 모델.
-    text_clean은 파일에 저장하지 않고, 나중에 Grok CLI에서
-    title + description 으로 조립해서 사용한다.
+    최종 전처리 후, 한 줄 = "영상 + 댓글 1개" 스키마.
+
+    스키마:
+      - id
+      - source
+      - lang
+      - title
+      - text
+      - published_at
+      - comment_index
+      - comment_text
+      - comment_publishedAt
+
+    **중요**
+    - 댓글이 있는 경우:
+        comment_index = 0, 1, 2, ...
+        comment_text = 실제 댓글
+        comment_publishedAt = 댓글 시각
+    - 댓글이 전혀 없는 영상의 경우:
+        comment_index = None
+        comment_text = None
+        comment_publishedAt = None
     """
 
     id: str
@@ -64,20 +76,24 @@ class FlattenedYoutubeVideo:
     lang: str
 
     title: str
-    description: str
+    text: str
     published_at: Optional[str]
 
+    comment_index: Optional[int]
+    comment_text: Optional[str]
+    comment_publishedAt: Optional[str]
+
     def to_dict(self) -> Dict[str, Any]:
-        """
-        JSONL로 나갈 때는 진짜 최소 스키마만 유지.
-        """
         return {
             "id": self.id,
             "source": self.source,
             "lang": self.lang,
             "title": self.title,
-            "description": self.description,
+            "text": self.text,
             "published_at": self.published_at,
+            "comment_index": self.comment_index,
+            "comment_text": self.comment_text,
+            "comment_publishedAt": self.comment_publishedAt,
         }
 
 
@@ -115,14 +131,6 @@ def load_raw_youtube(path: str | Path) -> Iterator[RawYoutubeVideo]:
             if not isinstance(snippet, dict):
                 snippet = {}
 
-            content_details = yt.get("contentDetails") or {}
-            if not isinstance(content_details, dict):
-                content_details = {}
-
-            statistics = yt.get("statistics") or {}
-            if not isinstance(statistics, dict):
-                statistics = {}
-
             discovered = obj.get("discovered_via") or {}
             if not isinstance(discovered, dict):
                 discovered = {}
@@ -135,15 +143,9 @@ def load_raw_youtube(path: str | Path) -> Iterator[RawYoutubeVideo]:
                 title_top=str(obj.get("title", "")),
                 text_top=str(obj.get("text", "")),
                 published_at_top=str(obj.get("published_at", "")) or None,
-                snippet_published_at=str(snippet.get("publishedAt") or "") or None,
                 snippet_title=str(snippet.get("title") or "") or None,
                 snippet_description=str(snippet.get("description") or "") or None,
-                channel_id=str(snippet.get("channelId") or "") or None,
-                channel_title=str(snippet.get("channelTitle") or "") or None,
-                duration_raw=str(content_details.get("duration") or "") or None,
-                view_count_raw=str(statistics.get("viewCount") or "") or None,
-                like_count_raw=str(statistics.get("likeCount") or "") or None,
-                comment_count_raw=str(statistics.get("commentCount") or "") or None,
+                snippet_published_at=str(snippet.get("publishedAt") or "") or None,
                 keyword=str(discovered.get("keyword") or "") or None,
                 extra=extra,
             )
@@ -153,10 +155,10 @@ def load_raw_youtube(path: str | Path) -> Iterator[RawYoutubeVideo]:
 
 
 def write_flattened_jsonl(
-    path: str | Path, records: Iterable[FlattenedYoutubeVideo]
+    path: str | Path, records: Iterable[FlattenedYoutubeComment]
 ) -> None:
     """
-    FlattenedYoutubeVideo 이터러블을 JSONL 로 저장.
+    FlattenedYoutubeComment 이터러블을 JSONL 로 저장.
     상위 디렉터리가 없으면 자동 생성.
     """
     p = Path(path)
