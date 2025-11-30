@@ -8,6 +8,7 @@ Usage:
   python -m preprocess.preprocess_gdelt.dedup_gdelt \
     --input <in.jsonl> --output <out.jsonl> [--threshold 0.90]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -101,8 +102,8 @@ def dedup_jsonl(
     max_tokens_for_index:
         한 문서에 대해서 역색인에 등록/조회에 사용할 토큰 수 상한.
     """
-    kept_texts: List[str] = []          # 정규화된 전체 텍스트
-    kept_tokens: List[Set[str]] = []    # 인덱싱에 사용된 토큰 집합
+    kept_texts: List[str] = []  # 정규화된 전체 텍스트
+    kept_tokens: List[Set[str]] = []  # 인덱싱에 사용된 토큰 집합
     inverted_index: Dict[str, Set[int]] = {}  # token -> {kept index}
 
     # 🔥 exact-text dedup 용: 정규화된 text → 첫 번째 인덱스
@@ -113,9 +114,10 @@ def dedup_jsonl(
     duplicates_near = 0
     duplicates_exact = 0
 
-    with input_path.open("r", encoding="utf-8") as infile, output_path.open(
-        "w", encoding="utf-8"
-    ) as outfile:
+    with (
+        input_path.open("r", encoding="utf-8") as infile,
+        output_path.open("w", encoding="utf-8") as outfile,
+    ):
         for line in infile:
             total += 1
             line = line.strip()

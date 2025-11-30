@@ -360,7 +360,9 @@ def merge_preprocessed(
     )
 
     if not unified_rows:
-        logger.warning("[WARN] 유효한 레코드가 없습니다. 출력 파일을 생성하지 않습니다.")
+        logger.warning(
+            "[WARN] 유효한 레코드가 없습니다. 출력 파일을 생성하지 않습니다."
+        )
         return
 
     log_summary("통합 전", unified_rows)

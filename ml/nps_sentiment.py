@@ -17,6 +17,7 @@ DCINSIDE_NPS_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+
 @dataclass
 class SentimentResult:
     """
@@ -227,9 +228,7 @@ def parse_grok_response(raw_text: str | Dict[str, Any]) -> SentimentResult:
     # 관련 없으면 규칙대로 강제 설정
     if not is_related:
         if text and len(text) < 5:
-            logger.info(
-                "[INFO] 짧은 텍스트로 무관 처리: len=%d", len(text)
-            )
+            logger.info("[INFO] 짧은 텍스트로 무관 처리: len=%d", len(text))
         return SentimentResult(
             is_related=False,
             negative=0.0,
@@ -257,6 +256,7 @@ def parse_grok_response(raw_text: str | Dict[str, Any]) -> SentimentResult:
         label=label_ko,
         explanation=explanation,
     )
+
 
 def analyze_single_comment(
     comment: str,

@@ -111,7 +111,9 @@ def extract_text_and_meta(obj: Dict[str, Any]) -> TextAndMeta:
         min_len = 5
         if len(text) < min_len:
             logger.warning(
-                "[WARN] id=%s 텍스트 너무 짧음 (len=%d), 무관 처리.", identifier, len(text)
+                "[WARN] id=%s 텍스트 너무 짧음 (len=%d), 무관 처리.",
+                identifier,
+                len(text),
             )
             text = ""  # 이 경우는 GrokClient 쪽에서 무관 처리
 
@@ -128,6 +130,8 @@ def extract_text_and_meta(obj: Dict[str, Any]) -> TextAndMeta:
         meta["sourcecountry"] = obj.get("sourcecountry")
 
     return TextAndMeta(text=text, meta=meta)
+
+
 # ---------- JSONL 입출력 ----------
 
 
@@ -229,7 +233,12 @@ def process_file(
             processed += 1
             success_count += 1 if merged.get("is_related") else 0  # 예시
             if processed % 10 == 0 or processed == total:
-                logger.info("[INFO] 처리 완료: %d/%d (성공률: %.2f%%)", processed, total, (success_count / processed * 100) if processed > 0 else 0)
+                logger.info(
+                    "[INFO] 처리 완료: %d/%d (성공률: %.2f%%)",
+                    processed,
+                    total,
+                    (success_count / processed * 100) if processed > 0 else 0,
+                )
     else:
         with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {
@@ -258,7 +267,12 @@ def process_file(
                 results[idx] = merged
                 processed += 1
                 if processed % 10 == 0 or processed == total:
-                    logger.info("[INFO] 처리 완료: %d/%d (성공률: %.2f%%)", processed, total, (success_count / processed * 100) if processed > 0 else 0)
+                    logger.info(
+                        "[INFO] 처리 완료: %d/%d (성공률: %.2f%%)",
+                        processed,
+                        total,
+                        (success_count / processed * 100) if processed > 0 else 0,
+                    )
 
     # 인덱스 순서대로 정렬해서 출력
     ordered_records = [results[i] for i in range(total)]

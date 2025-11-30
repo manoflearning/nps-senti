@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 from openai import OpenAI
-from openai.types import CompletionUsage
 from dotenv import load_dotenv  # ✅ .env 읽기용
 from tenacity import retry, stop_after_attempt, wait_fixed  # retry
 
@@ -107,7 +106,9 @@ class GrokClient:
         pos = max(0.0, pos)
 
         # 추가: 욕설/냉소 감지 (dcinside 특화, 웹 샘플 기반)
-        curse_patterns = r"(ㅅㅂ|ㅈ|시발|씨발|지랄|fuck|shit|사기|근들갑|싱글벙글|ㅋㅋ{2,})"
+        curse_patterns = (
+            r"(ㅅㅂ|ㅈ|시발|씨발|지랄|fuck|shit|사기|근들갑|싱글벙글|ㅋㅋ{2,})"
+        )
         if re.search(curse_patterns, text, re.IGNORECASE) and "dcinside" in source:
             neg += 0.15
             neg = min(1.0, neg)

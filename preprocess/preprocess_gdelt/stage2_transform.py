@@ -60,7 +60,7 @@ def choose_published_at(
         return norm2
 
     # 둘 다 파싱 안 되면 원본 published_at이라도 돌려줌
-    return (published_at or seendate or None)
+    return published_at or seendate or None
 
 
 # ---------- 텍스트 클리닝 ----------
@@ -232,22 +232,24 @@ def deduplicate_records(
         except Exception:
             return None
 
-    def choose_better(a: FlattenedGdeltArticle, b: FlattenedGdeltArticle) -> FlattenedGdeltArticle:
+    def choose_better(
+        a: FlattenedGdeltArticle, b: FlattenedGdeltArticle
+    ) -> FlattenedGdeltArticle:
         # 1) text 길이가 긴 것 우선
         len_a = len(a.text or "")
         len_b = len(b.text or "")
         if len_b > len_a:
-            winner, loser = b, a
+            winner = b
         elif len_a > len_b:
-            winner, loser = a, b
+            winner = a
         else:
             # 2) 길이가 같으면 published_at 더 최신인 쪽
             da = parse_dt(a.published_at)
             db = parse_dt(b.published_at)
             if db and (not da or db > da):
-                winner, loser = b, a
+                winner = b
             else:
-                winner, loser = a, b
+                winner = a
         return winner
 
     # 1단계: (lang, normalized_title) 로 그룹핑
@@ -272,7 +274,9 @@ def deduplicate_records(
         for rec in recs:
             merged = False
             for i, kept in enumerate(selected):
-                sim = difflib.SequenceMatcher(None, kept.text or "", rec.text or "").ratio()
+                sim = difflib.SequenceMatcher(
+                    None, kept.text or "", rec.text or ""
+                ).ratio()
                 # 🔥 거의 완전히 같은 기사면 같은 것으로 본다
                 if sim >= 0.995:
                     better = choose_better(kept, rec)
@@ -293,7 +297,9 @@ def deduplicate_records(
             len(deduped),
         )
     else:
-        logger.info("[INFO] GDELT 중복 제거 결과: 병합된 중복 없음 (원본 %d개)", len(records))
+        logger.info(
+            "[INFO] GDELT 중복 제거 결과: 병합된 중복 없음 (원본 %d개)", len(records)
+        )
 
     return deduped
 
