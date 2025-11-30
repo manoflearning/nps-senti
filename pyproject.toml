@@ -9,6 +9,7 @@ dependencies = [
     "requests>=2.32.5",
     "nps-senti-crawl",
     "openai>=2.8.1",
+    "tenacity>=8.2.3",
 ]
 
 [dependency-groups]
