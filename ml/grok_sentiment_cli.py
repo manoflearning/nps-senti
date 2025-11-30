@@ -32,6 +32,10 @@ def extract_text_and_meta(obj: Dict[str, Any]) -> TextAndMeta:
     """
     다양한 소스(dcinside, bobaedream, youtube, gdelt, etc.)를 공통 포맷으로 맞춰서
     GrokClient.analyze_sentiment 에 넘기기 위한 텍스트와 메타데이터를 만든다.
+
+    ⚙ 변경사항:
+      - dcinside 는 짧은 댓글("고갈 ㅋ" 등)도 그대로 모델에 보내도록
+        최소 길이 필터를 끈다.
     """
     source = obj.get("source") or ""
     lang = obj.get("lang") or None
@@ -67,7 +71,7 @@ def extract_text_and_meta(obj: Dict[str, Any]) -> TextAndMeta:
         elif title:
             text_candidates.append(title)
 
-    # 🔥 4) GDELT 기사: title + text 조합
+    # 4) GDELT 기사: title + text 조합
     if source == "gdelt":
         title = (obj.get("title") or "").strip()
         body = (obj.get("text") or "").strip()
@@ -102,6 +106,15 @@ def extract_text_and_meta(obj: Dict[str, Any]) -> TextAndMeta:
         title_fallback = (obj.get("title") or "").strip()
         text = title_fallback
 
+    # ✅ 변경 핵심: dcinside 는 짧은 댓글도 그대로 보냄
+    if source != "dcinside":
+        min_len = 5
+        if len(text) < min_len:
+            logger.warning(
+                "[WARN] id=%s 텍스트 너무 짧음 (len=%d), 무관 처리.", identifier, len(text)
+            )
+            text = ""  # 이 경우는 GrokClient 쪽에서 무관 처리
+
     meta: Dict[str, Any] = {
         "id": identifier,
         "source": source,
@@ -110,13 +123,11 @@ def extract_text_and_meta(obj: Dict[str, Any]) -> TextAndMeta:
         "published_at": published_at,
     }
 
-    # 🔥 GDELT의 sourcecountry도 메타에 포함
+    # GDELT의 sourcecountry도 메타에 포함
     if "sourcecountry" in obj and obj.get("sourcecountry"):
         meta["sourcecountry"] = obj.get("sourcecountry")
 
     return TextAndMeta(text=text, meta=meta)
-
-
 # ---------- JSONL 입출력 ----------
 
 
@@ -195,7 +206,7 @@ def process_file(
     input_path: str | Path,
     output_path: str | Path,
     limit: Optional[int] = None,
-    workers: int = 1,
+    workers: int = 4,  # 수정: 기본 4
 ) -> None:
     records = read_jsonl(input_path, limit=limit)
     total = len(records)
@@ -209,14 +220,16 @@ def process_file(
 
     results: Dict[int, Dict[str, Any]] = {}
     processed = 0
+    success_count = 0  # 추가: 성공률 로깅
 
     if workers <= 1:
         for idx, obj in enumerate(records):
             _, merged = analyze_one(client, idx, obj)
             results[idx] = merged
             processed += 1
+            success_count += 1 if merged.get("is_related") else 0  # 예시
             if processed % 10 == 0 or processed == total:
-                logger.info("[INFO] 처리 완료: %d/%d", processed, total)
+                logger.info("[INFO] 처리 완료: %d/%d (성공률: %.2f%%)", processed, total, (success_count / processed * 100) if processed > 0 else 0)
     else:
         with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {
@@ -228,6 +241,7 @@ def process_file(
                 idx = futures[future]
                 try:
                     _, merged = future.result()
+                    success_count += 1 if merged.get("is_related") else 0
                 except Exception as exc:
                     logger.warning(
                         "[WARN] index=%d future 처리 중 예외: %s", idx, repr(exc)
@@ -244,7 +258,7 @@ def process_file(
                 results[idx] = merged
                 processed += 1
                 if processed % 10 == 0 or processed == total:
-                    logger.info("[INFO] 처리 완료: %d/%d", processed, total)
+                    logger.info("[INFO] 처리 완료: %d/%d (성공률: %.2f%%)", processed, total, (success_count / processed * 100) if processed > 0 else 0)
 
     # 인덱스 순서대로 정렬해서 출력
     ordered_records = [results[i] for i in range(total)]
@@ -282,8 +296,8 @@ def main(argv: Optional[List[str]] = None) -> None:
         "--workers",
         "-w",
         type=int,
-        default=1,
-        help="동시 요청에 사용할 워커 수 (기본: 1)",
+        default=4,  # 수정: 기본 4
+        help="동시 요청에 사용할 워커 수 (기본: 4)",
     )
 
     args = parser.parse_args(argv)

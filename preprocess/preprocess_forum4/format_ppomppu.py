@@ -197,6 +197,8 @@ def iter_formatted_rows() -> Iterator[dict]:
         comments_raw = post.get("extra", {}).get("forum", {}).get("comments") or []
         comment_phrases = collect_comment_phrases(comments_raw)
         body = clean_post_text(post.get("text") or "", title, comment_phrases)
+
+        # 🟦 post 레코드
         yield {
             "id": post_id,
             "source": "ppomppu",
@@ -211,8 +213,9 @@ def iter_formatted_rows() -> Iterator[dict]:
             "comment_publishedAt": None,
         }
 
+        # 🟦 comment 레코드 (id = f"{post_id}_{idx}")
         for idx, comment in enumerate(comments_raw):
-            comment_id = str(comment.get("id") or f"{post_id}_comment_{idx}")
+            comment_id = f"{post_id}_{idx}"
             comment_text = (comment.get("text") or "").strip() or None
             comment_time = normalize_comment_timestamp(
                 post_dt, comment.get("publishedAt")
@@ -223,11 +226,11 @@ def iter_formatted_rows() -> Iterator[dict]:
                 "doc_type": "comment",
                 "parent_id": post_id,
                 "title": title,
+                # `text` for comment records mirrors the (cleaned) post body
                 "text": body or None,
                 "lang": lang,
                 "published_at": published_at,
                 "comment_index": idx,
-                # `text` for comment records should mirror the post body
                 "comment_text": comment_text,
                 "comment_publishedAt": comment_time,
             }

@@ -148,23 +148,18 @@ def extract_post_body(post: RawPost) -> str:
 
 def choose_comment_id(post: RawPost, comment_meta: dict, idx: int) -> str:
     """
-    댓글 레코드에 사용할 id를 선택한다.
+    댓글 레코드에 사용할 id를 생성한다.
 
-    우선순위 예시:
-      1. meta["id"]          (댓글 id)
-      2. meta["user_id"]
-      3. meta["author"]
-      4. meta["nickname"]
-      5. 위가 다 없으면: f"{post.id}#c{idx}" (fallback)
+    규칙:
+      - 항상 f"{post.id}_{idx}" 형식으로 생성한다.
+        * post.id  : 원글 식별자
+        * idx      : 0부터 시작하는 댓글 인덱스
+
+    이렇게 하면:
+      - 크롤링 메타 구조(meta['id'], user_id 등)가 바뀌어도 항상 안정적인 식별자 유지
+      - (post.id, comment_index)만 있으면 동일 id를 재생성 가능
     """
-    meta = comment_meta or {}
-
-    for key in ("id", "user_id", "author", "nickname"):
-        value = meta.get(key)
-        if value:
-            return str(value)
-
-    return f"{post.id}#c{idx}"
+    return f"{post.id}_{idx}"
 
 
 # ---------- 핵심: RawPost 하나 → FlattenedRecord 여러 개 ----------

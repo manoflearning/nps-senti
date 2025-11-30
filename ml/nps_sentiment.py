@@ -2,11 +2,20 @@
 from __future__ import annotations
 
 import json
+import logging  # 추가: 바이어스 로그
+import re
 from dataclasses import asdict, dataclass
 from typing import Any, Dict
 
 from .grok_client import GrokClient
 
+
+logger = logging.getLogger(__name__)  # 추가
+# DCInside용 연금 관련 키워드 패턴 (grok_client와 동일하게 유지)
+DCINSIDE_NPS_PATTERN = re.compile(
+    r"(국민연금|연금공단|\bNPS\b|national pension|연금|기금|고갈|수익률|보험료|수급|노후|소득대체율)",
+    re.IGNORECASE,
+)
 
 @dataclass
 class SentimentResult:
@@ -157,16 +166,15 @@ def _renormalize_probs(
 def _decide_label(neg: float, neu: float, pos: float) -> str:
     """
     세 확률 중 가장 큰 값으로 한국어 라벨을 정한다.
+    동점 시 부정 우선 (국민연금 부정이 많음, dcinside 샘플 기반 강화).
     return: "부정" / "중립" / "긍정"
     """
-    candidates = [
-        ("부정", neg),
-        ("중립", neu),
-        ("긍정", pos),
-    ]
-    candidates.sort(key=lambda x: x[1], reverse=True)
-    best_ko, _ = candidates[0]
-    return best_ko
+    max_val = max(neg, neu, pos)
+    if neg == max_val:
+        return "부정"  # 부정 우선 강화
+    if pos == max_val:
+        return "긍정"
+    return "중립"
 
 
 def _format_explanation(label_ko: str, explanation: str | None) -> str:
@@ -200,7 +208,17 @@ def parse_grok_response(raw_text: str | Dict[str, Any]) -> SentimentResult:
     else:
         data = raw_text
 
-    is_related = _coerce_bool(data.get("is_related", False))
+    text = str(data.get("text") or "")
+    source = str(data.get("source") or "")
+
+    orig_is_related = _coerce_bool(data.get("is_related", False))
+    is_related = orig_is_related
+
+    # ✅ DCInside 관련성 보정
+    if "dcinside" in source and not is_related:
+        if DCINSIDE_NPS_PATTERN.search(text):
+            is_related = True
+
     negative = _coerce_float(data.get("negative", 0.0))
     neutral = _coerce_float(data.get("neutral", 0.0))
     positive = _coerce_float(data.get("positive", 0.0))
@@ -208,6 +226,10 @@ def parse_grok_response(raw_text: str | Dict[str, Any]) -> SentimentResult:
 
     # 관련 없으면 규칙대로 강제 설정
     if not is_related:
+        if text and len(text) < 5:
+            logger.info(
+                "[INFO] 짧은 텍스트로 무관 처리: len=%d", len(text)
+            )
         return SentimentResult(
             is_related=False,
             negative=0.0,
@@ -217,24 +239,24 @@ def parse_grok_response(raw_text: str | Dict[str, Any]) -> SentimentResult:
             explanation="국민연금과 관련 없음",
         )
 
-    # 확률 재정규화 (0.XX, 합 1.00)
+    # 관련(true)이면 확률 재정규화
     negative, neutral, positive = _renormalize_probs(negative, neutral, positive)
 
-    # 라벨 결정
-    label_ko = _decide_label(negative, neutral, positive)
+    # 바이어스 체크
+    if positive > 0.8:
+        logger.warning("[WARN] High positive bias detected: positive=%.2f", positive)
 
-    # 설명 포맷
+    label_ko = _decide_label(negative, neutral, positive)
     explanation = _format_explanation(label_ko, explanation)
 
     return SentimentResult(
-        is_related=is_related,
+        is_related=True,
         negative=negative,
         neutral=neutral,
         positive=positive,
         label=label_ko,
         explanation=explanation,
     )
-
 
 def analyze_single_comment(
     comment: str,
@@ -249,4 +271,6 @@ def analyze_single_comment(
 
     meta = {"source": source}
     result = client.analyze_sentiment(text=comment, meta=meta)
-    return parse_grok_response(result)
+
+    # ✅ source도 같이 넘겨서 parse_grok_response에서 dcinside 보정 가능
+    return parse_grok_response({**result, "text": comment, "source": source})

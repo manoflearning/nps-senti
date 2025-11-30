@@ -1,3 +1,4 @@
+# preprocess/preprocess_gdelt/stage1_models_io.py
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -16,7 +17,6 @@ logger = logging.getLogger(__name__)
 class RawGdeltArticle:
     """
     gdelt.jsonl 한 줄을 구조화한 원본 모델.
-    (원본 필드는 넉넉하게 들고 있고, 실제로 무엇을 쓸지는 stage2에서 결정)
     """
 
     id: str
@@ -26,16 +26,13 @@ class RawGdeltArticle:
     title: str
     text: str
 
-    # 날짜 관련
     published_at: Optional[str]
-    seendate: Optional[str]  # discovered_via.seendate 또는 extra.gdelt.seendate
 
-    # 도메인/국가
-    domain: Optional[str]  # extra.gdelt.domain
-    sourcecountry: Optional[str]  # extra.gdelt.sourcecountry
-
-    # 품질/길이 등
-    quality_length: Optional[int]
+    # 보조 정보
+    seendate: Optional[str]
+    url: Optional[str]
+    domain: Optional[str]
+    sourcecountry: Optional[str]
 
     discovered_via: Dict[str, Any]
     extra: Dict[str, Any]
@@ -46,15 +43,13 @@ class FlattenedGdeltArticle:
     """
     전처리 완료 후 감성분석에 바로 쓰일 최종 모델.
 
-    ✅ 최종 출력 JSONL에는 아래 필드만 포함한다:
+    최종 JSONL 필드:
       - id
       - source
       - lang
       - title
       - text
       - published_at
-
-    sourcecountry, length 같은 중간/분석용 필드는 완전히 제거한다.
     """
 
     id: str
@@ -63,14 +58,12 @@ class FlattenedGdeltArticle:
 
     title: str
     text: str
-
-    # 원본 published_at 기반 최종 시각 (seendate fallback 사용하지 않음)
     published_at: Optional[str]
 
+    # dedup에서만 쓰고 JSONL에는 내보내지 않을 필드
+    url: Optional[str] = None
+
     def to_dict(self) -> Dict[str, Any]:
-        """
-        최종 JSONL로 나갈 때는 진짜 필요한 필드만 남긴다.
-        """
         return {
             "id": self.id,
             "source": self.source,
@@ -116,17 +109,15 @@ def load_raw_gdelt(path: str | Path) -> Iterator[RawGdeltArticle]:
             if not isinstance(discovered, dict):
                 discovered = {}
 
-            # 기본 필드
-            _id = str(obj.get("id", ""))
-            source = str(obj.get("source", "")) or "gdelt"
-            lang = str(obj.get("lang", "")) or "ko"
+            _id = str(obj.get("id", "") or "")
+            source = str(obj.get("source", "") or "gdelt")
+            lang = str(obj.get("lang", "") or "en")
 
-            title = str(obj.get("title", "")) or ""
-            text = str(obj.get("text", "")) or ""
+            title = str(obj.get("title", "") or "")
+            text = str(obj.get("text", "") or "")
 
             published_at = str(obj.get("published_at") or "") or None
 
-            # seendate 후보 2곳 (지금은 flatten 단계에서 fallback으로 쓰지 않지만, raw에는 남겨둔다)
             seendate = None
             dv_seendate = discovered.get("seendate")
             if dv_seendate:
@@ -139,11 +130,8 @@ def load_raw_gdelt(path: str | Path) -> Iterator[RawGdeltArticle]:
             domain = str(gd.get("domain") or "") or None
             sourcecountry = str(gd.get("sourcecountry") or "") or None
 
-            qlen_raw = gd.get("length") or gd.get("quality_length")
-            try:
-                quality_length = int(qlen_raw) if qlen_raw is not None else None
-            except (TypeError, ValueError):
-                quality_length = None
+            url = obj.get("url") or gd.get("url") or gd.get("sourceurl")
+            url_str: Optional[str] = str(url) if url else None
 
             yield RawGdeltArticle(
                 id=_id,
@@ -153,9 +141,9 @@ def load_raw_gdelt(path: str | Path) -> Iterator[RawGdeltArticle]:
                 text=text,
                 published_at=published_at,
                 seendate=seendate,
+                url=url_str,
                 domain=domain,
                 sourcecountry=sourcecountry,
-                quality_length=quality_length,
                 discovered_via=discovered,
                 extra=extra,
             )

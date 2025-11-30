@@ -71,20 +71,30 @@ def clean_text(text: str | None) -> str | None:
 
 def iter_formatted_rows() -> Iterator[dict]:
     """
-    forum_theqoo.jsonl → 공통 포맷(post-only)으로 변환.
+    forum_theqoo.jsonl → 공통 포맷(post + comments)으로 변환.
 
     출력 스키마:
       - id
       - source = "theqoo"
-      - doc_type = "post"
-      - parent_id = None
+      - doc_type = "post" / "comment"
+      - parent_id
       - title
       - text
       - lang
       - published_at
-      - comment_index = None
-      - comment_text = None
-      - comment_publishedAt = None
+      - comment_index
+      - comment_text
+      - comment_publishedAt
+
+    규칙:
+      - post 레코드:
+          id            = post_id
+          parent_id     = None
+          comment_*     = None
+      - comment 레코드:
+          id            = f"{post_id}_{idx}"
+          parent_id     = post_id
+          text          = 게시글 본문(text)과 동일 (댓글 맥락용)
     """
     for post in read_jsonl(INPUT_PATH):
         post_id = str(post.get("id") or "").strip()
@@ -96,6 +106,7 @@ def iter_formatted_rows() -> Iterator[dict]:
         lang = post.get("lang") or "ko"
         published_at = post.get("published_at") or post.get("date")
 
+        # 🟦 post 레코드
         yield {
             "id": post_id,
             "source": "theqoo",
@@ -109,6 +120,43 @@ def iter_formatted_rows() -> Iterator[dict]:
             "comment_text": None,
             "comment_publishedAt": None,
         }
+
+        # 🟦 comment 레코드 (extra.forum.comments가 있을 경우에만 생성)
+        extra = post.get("extra") or {}
+        if not isinstance(extra, dict):
+            extra = {}
+        forum = extra.get("forum") or {}
+        if not isinstance(forum, dict):
+            forum = {}
+        comments = forum.get("comments") or []
+        if not isinstance(comments, list):
+            comments = []
+
+        for idx, comment in enumerate(comments):
+            if not isinstance(comment, dict):
+                continue
+
+            comment_text = (comment.get("text") or "").strip()
+            if not comment_text:
+                continue
+
+            comment_id = f"{post_id}_{idx}"
+            comment_lang = comment.get("lang") or lang
+            comment_published = comment.get("publishedAt")
+
+            yield {
+                "id": comment_id,
+                "source": "theqoo",
+                "doc_type": "comment",
+                "parent_id": post_id,
+                "title": title,
+                "text": text,  # 게시글 본문을 공유
+                "lang": comment_lang,
+                "published_at": published_at,
+                "comment_index": idx,
+                "comment_text": comment_text,
+                "comment_publishedAt": comment_published,
+            }
 
 
 def main() -> None:
@@ -124,7 +172,7 @@ def main() -> None:
             total += 1
 
     rel = OUTPUT_PATH.relative_to(BASE_DIR)
-    print(f"Wrote {total} posts to {rel}")
+    print(f"Wrote {total} rows (posts + comments) to {rel}")
 
 
 if __name__ == "__main__":

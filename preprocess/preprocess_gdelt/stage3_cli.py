@@ -1,3 +1,4 @@
+# preprocess/preprocess_gdelt/stage3_cli.py
 from __future__ import annotations
 
 import argparse
@@ -32,21 +33,13 @@ def preprocess_gdelt(
 
     - 깨진 JSON 라인 스킵
     - 텍스트 클리닝
-    - (본문 텍스트) 길이 기준 필터링
+    - (본문 text) 길이 기준 필터링
     - 언어 필터 (ko/en 등)
-    - 중복 제거 (id 또는 title 기준)
-    - 최종 출력에서는 sourcecountry, length, domain, seendate 등 중간 필드를 제거하고
-      id / source / lang / title / text / published_at만 남긴다.
+    - 중복 제거 (lang+title+date 기준)
+    - 최종 출력: id, source, lang, title, text, published_at
     """
-    repo_root = Path(__file__).resolve().parents[2]
-
-    in_path = Path(input_path)
-    if not in_path.is_absolute():
-        in_path = (repo_root / in_path).resolve()
-
-    out_path = Path(output_path)
-    if not out_path.is_absolute():
-        out_path = (repo_root / out_path).resolve()
+    in_path = Path(input_path).resolve()
+    out_path = Path(output_path).resolve()
 
     if not in_path.exists():
         raise FileNotFoundError(f"입력 파일을 찾을 수 없습니다: {in_path}")
@@ -98,31 +91,31 @@ def preprocess_gdelt(
 
 def main(argv: Optional[List[str]] = None) -> None:
     parser = argparse.ArgumentParser(
-        description="GDELT 국민연금 관련 뉴스 데이터 전처리"
+        description="GDELT 뉴스 데이터 전처리 (국민연금 프로젝트용)"
     )
     parser.add_argument(
         "--input",
         "-i",
         required=True,
-        help="입력 gdelt.jsonl 경로 (프로젝트 루트 기준 상대경로 또는 절대경로)",
+        help="입력 gdelt.jsonl 경로",
     )
     parser.add_argument(
         "--output",
         "-o",
         required=True,
-        help="출력 JSONL 경로 (예: preprocess/preprocessing_data/gdelt.jsonl)",
+        help="출력 JSONL 경로 (예: preprocess/preprocessing_data/gdelt_clean.jsonl)",
     )
     parser.add_argument(
         "--min-length",
         type=int,
         default=0,
-        help="본문(text) 최소 길이 필터 (문자 수 기준, 기본=0: 필터링 없음)",
+        help="본문(text) 최소 길이 필터 (문자 수 기준, 기본=0: 필터 없음)",
     )
     parser.add_argument(
         "--max-length",
         type=int,
         default=None,
-        help="본문(text) 최대 길이 필터 (문자 수 기준, 기본=None: 필터링 없음)",
+        help="본문(text) 최대 길이 필터 (문자 수 기준, 기본=None: 필터 없음)",
     )
     parser.add_argument(
         "--lang-filter",

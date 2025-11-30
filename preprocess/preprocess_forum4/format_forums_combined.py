@@ -60,14 +60,14 @@ def collect_comment_rows(
     forum.extra.forum.comments 구조를 공통 스키마(comment)로 변환.
 
     공통 스키마:
-      - id
+      - id                = f"{post_id}_{idx}"   (0부터 시작하는 댓글 인덱스)
       - source
       - doc_type="comment"
-      - parent_id
+      - parent_id         = post_id
       - title
       - lang
-      - published_at (게시글 기준)
-      - text (옵션: base_text가 주어지면 게시글 본문)
+      - published_at      (게시글 기준)
+      - text              (옵션: base_text가 주어지면 게시글 본문)
       - comment_index
       - comment_text
       - comment_publishedAt
@@ -82,7 +82,8 @@ def collect_comment_rows(
         if not comment_text:
             continue
 
-        comment_id = str(comment.get("id") or f"{post_id}_comment_{idx}")
+        # ✅ 디시/유튜브 스타일: comment id = "{post_id}_{idx}"
+        comment_id = f"{post_id}_{idx}"
         comment_lang = comment.get("lang") or base_lang
 
         # 키 순서를 보장하기 위해 dict를 순서대로 생성
@@ -92,7 +93,7 @@ def collect_comment_rows(
         row["doc_type"] = "comment"
         row["parent_id"] = post_id
         row["title"] = title
-        # mlbpark/디시 스타일: 댓글 레코드에도 게시글 본문 text를 공유하고 싶을 때
+        # mlbpark/보배 등: 댓글 레코드에도 게시글 본문 text를 공유하고 싶을 때
         if base_text is not None:
             row["text"] = base_text
         row["lang"] = comment_lang
@@ -154,7 +155,7 @@ def extract_post_body_mlbpark(post: dict) -> str:
 
 def iter_mlbpark_rows() -> Iterator[dict]:
     """
-    mlbpark 원본 forum_mlbpark.jsonl → 디시와 같은 공통 스키마로 변환.
+    mlbpark 원본 forum_mlbpark.jsonl → 공통 스키마로 변환.
 
     post 레코드:
       - id            = 글 id
@@ -168,7 +169,7 @@ def iter_mlbpark_rows() -> Iterator[dict]:
       - comment_*     = None
 
     comment 레코드:
-      - id                = 댓글 id (없으면 "{post_id}_comment_{idx}")
+      - id                = f"{post_id}_{idx}"
       - source            = "mlbpark"
       - doc_type          = "comment"
       - parent_id         = 원글 id
@@ -209,7 +210,6 @@ def iter_mlbpark_rows() -> Iterator[dict]:
         post_body = extract_post_body_mlbpark(post)
 
         # 1) 게시글 레코드
-        # 원하는 키 순서: title 다음에 text가 오도록 삽입 순서를 조정
         post_row: Dict[str, object] = {}
         post_row["id"] = post_id
         post_row["source"] = "mlbpark"
@@ -225,9 +225,7 @@ def iter_mlbpark_rows() -> Iterator[dict]:
 
         yield post_row
 
-        # 2) 댓글 레코드들
-        #    text = post_body (게시글 본문 공유), comment_text = 댓글 본문
-        # 댓글 레코드는 게시글 본문을 함께 공유하도록 함 (댓글의 `text` = post_body)
+        # 2) 댓글 레코드들 (댓글의 text = post_body, comment_text = 댓글 본문)
         yield from collect_comment_rows(
             "mlbpark",
             post_id,
@@ -253,6 +251,12 @@ def first_paragraph(text: str | None) -> str | None:
 
 
 def iter_bobaedream_rows() -> Iterator[dict]:
+    """
+    bobaedream 원본 forum_bobaedream.jsonl → 공통 스키마로 변환.
+
+    comment 레코드 id 규칙:
+      - id = f"{post_id}_{idx}"
+    """
     path = DATA_DIR / "forum_bobaedream.jsonl"
     for post in read_jsonl(path):
         post_id = str(post.get("id") or "").strip()
@@ -291,68 +295,6 @@ def iter_bobaedream_rows() -> Iterator[dict]:
         yield from collect_comment_rows(
             "bobaedream", post_id, title, published_at, lang, comments, base_text=text
         )
-
-
-# ---------------------------------------------------------------------------
-# dcinside (이미 flatten 된 파일을 재사용할 때)
-# ---------------------------------------------------------------------------
-
-
-def iter_dcinside_rows() -> Iterator[dict]:
-    """
-    dcinside는 별도의 전처리 파이프라인에서 flatten된 JSONL을 재사용한다.
-
-    여기서는 예전 포맷 예시로,
-    data_crawl/forum_dcinside_post_plus_comments_combined_with_year.jsonl
-    같은 파일을 읽는 형태를 가정.
-    """
-    path = DATA_DIR / "forum_dcinside_post_plus_comments_combined_with_year.jsonl"
-    if not path.exists():
-        return
-
-    for entry in read_jsonl(path):
-        post_id = str(entry.get("id") or "").strip()
-        if not post_id:
-            continue
-        lang = entry.get("lang") or "ko"
-        published_at = entry.get("published_at") or entry.get("date")
-        comment_index = entry.get("comment_index")
-
-        # 게시글 행
-        if comment_index is None:
-            yield {
-                "id": post_id,
-                "source": "dcinside",
-                "doc_type": "post",
-                "parent_id": None,
-                "title": (entry.get("title") or "").strip(),
-                "lang": lang,
-                "published_at": published_at,
-                "comment_index": None,
-                "comment_text": None,
-                "comment_publishedAt": None,
-            }
-        else:
-            # 댓글 행
-            comment_text = (entry.get("comment_text") or "").strip()
-            if not comment_text:
-                continue
-            comment_id = str(
-                entry.get("comment_id") or f"{post_id}_comment_{comment_index}"
-            )
-            yield {
-                "id": comment_id,
-                "source": "dcinside",
-                "doc_type": "comment",
-                "parent_id": post_id,
-                "title": (entry.get("title") or "").strip(),
-                "lang": lang,
-                "published_at": published_at,
-                "comment_index": comment_index,
-                "comment_text": comment_text,
-                "comment_publishedAt": entry.get("comment_publishedAt")
-                or entry.get("comment_publishedAt_raw"),
-            }
 
 
 # ---------------------------------------------------------------------------

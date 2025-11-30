@@ -163,6 +163,24 @@ def build_video_text(title: str, description: str) -> str:
     return d
 
 
+# ---------- 댓글 id 규칙 ----------
+
+
+def build_comment_id(raw: RawYoutubeVideo, idx: int) -> str:
+    """
+    YouTube 댓글 레코드에 사용할 id 생성.
+
+    규칙:
+      - 항상 f"{raw.id}_{idx}" 형식으로 생성한다.
+        * raw.id : 원본 영상 id
+        * idx    : 0부터 시작하는 댓글 인덱스
+
+    예:
+      영상 id가 'abcd1234'이고 첫 번째 댓글이면 → 'abcd123_0'
+    """
+    return f"{raw.id}_{idx}"
+
+
 # ---------- 핵심: RawYoutubeVideo → FlattenedYoutubeComment 리스트 ----------
 
 
@@ -178,14 +196,12 @@ def flatten_video_to_comments(
       - id, source, lang, title, text, published_at
       - comment_index, comment_text, comment_publishedAt
 
-    댓글이 하나도 없는 영상도 반드시 1줄 생성:
-      - comment_index = None
-      - comment_text = None
-      - comment_publishedAt = None
+    **id 규칙**
+      - 댓글이 없는 영상: id == 원본 영상 id
+      - 댓글이 있는 경우 각 댓글 row:
+          id == f"{영상 id}#c{comment_index}"
     """
     # 제목/설명 정리
-    # ★ snippet_title이 있든 없든, 최종적으로 clean_title을 한 번 거치기 때문에
-    #    모든 유튜브 행의 title에서 해시태그가 제거된다.
     title_raw = raw.snippet_title or raw.title_top or ""
     title = clean_title(title_raw)
 
@@ -219,7 +235,7 @@ def flatten_video_to_comments(
 
         results.append(
             FlattenedYoutubeComment(
-                id=raw.id,
+                id=raw.id,  # 댓글 없을 땐 영상 id 그대로 사용
                 source=raw.source or "youtube",
                 lang=raw.lang or "ko",
                 title=title,
@@ -254,9 +270,12 @@ def flatten_video_to_comments(
         if min_length and len(text) < min_length:
             continue
 
+        # ✅ 디시처럼: 댓글용 id는 "영상id#c{idx}" 형식
+        comment_id = build_comment_id(raw, idx)
+
         results.append(
             FlattenedYoutubeComment(
-                id=raw.id,
+                id=comment_id,
                 source=raw.source or "youtube",
                 lang=raw.lang or "ko",
                 title=title,

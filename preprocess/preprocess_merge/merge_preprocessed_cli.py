@@ -13,9 +13,9 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
-
 # ---------- 데이터 모델 (검사용) ----------
 
+# 최소 공통 분모 스키마 (너가 만든 per-site 전처리 결과 기준)
 REQUIRED_KEYS = {"id", "source", "lang", "title", "text", "published_at"}
 
 
@@ -24,8 +24,8 @@ class UnifiedRow:
     """
     통합 전처리 후 한 줄의 공통 스키마.
 
-    - YouTube 댓글 전처리 결과를 기준으로,
-      다른 소스들도 동일 스키마에 맞춰 들어온다고 가정한다.
+    - YouTube/디시/포럼 등 전처리 결과를 모두 이 스키마로 통합
+    - raw에는 원본 dict를 그대로 보존해서, 추가 메타데이터가 날아가지 않도록 함
     """
 
     id: str
@@ -39,6 +39,7 @@ class UnifiedRow:
     comment_text: Optional[str]
     comment_publishedAt: Optional[str]
 
+    # doc_type / parent_id 등 추가 메타는 raw에 보존
     raw: Dict[str, Any]
 
     @classmethod
@@ -48,13 +49,13 @@ class UnifiedRow:
         필수 키(id, source, lang, title, text, published_at)가 없으면 None (스킵).
         """
 
-        # 필수 키 체크
+        # 필수 키 체크 (너가 만든 per-site 전처리 포맷 기준)
         missing = REQUIRED_KEYS - obj.keys()
         if missing:
             logger.warning(
-                "[WARN] 필수 컬럼 누락(id/source/lang/title/text/published_at): %s (누락: %s)",
-                obj,
+                "[WARN] 필수 컬럼 누락(id/source/lang/title/text/published_at): 누락=%s, row=%r",
                 ", ".join(sorted(missing)),
+                obj,
             )
             return None
 
@@ -118,7 +119,7 @@ class UnifiedRow:
         """
         최종 JSONL로 쓸 때는 raw를 기반으로 하되,
         핵심 스키마 필드들은 위에서 정규화한 값으로 덮어쓴다.
-        (혹시 다른 메타 컬럼이 있어도 그대로 유지되게)
+        (doc_type, parent_id 등 다른 메타 컬럼은 그대로 유지)
         """
         data = dict(self.raw)
         data["id"] = self.id
@@ -166,8 +167,12 @@ def make_key(row: UnifiedRow) -> Tuple[Any, ...]:
     중복 판별용 key.
 
     - 기본: (source, id, comment_index, comment_text)
-    - comment_index, comment_text가 None인 경우도 그대로 포함
-      (댓글 없는 영상은 (source, id, None, None) 으로 구분)
+
+    이유:
+      - comment id를 디시/유튜브/포럼 모두 "{post_id}#c{idx}"로 통일해서,
+        id만 써도 충분히 고유하지만,
+      - 혹시 같은 id에 text만 다른 중복이 섞였을 때도 안정적으로 잡기 위해
+        comment_index, comment_text를 함께 사용.
     """
     return (
         row.source,
@@ -183,7 +188,6 @@ def choose_better_row(a: UnifiedRow, b: UnifiedRow) -> UnifiedRow:
     기준:
       1) text 길이가 더 긴 것
       2) published_at이 더 구체적인/긴 문자열인 것
-      (필요하면 여기 추가 규칙 붙일 수 있음)
     """
     len_a = len(a.text or "")
     len_b = len(b.text or "")
@@ -241,7 +245,7 @@ def parse_iso_for_sort(s: Optional[str]) -> Optional[datetime]:
         else:
             s2 = s
         dt = datetime.fromisoformat(s2)
-        # offset-aware면 UTC로 정규화 후 offset-naive로 변환
+        # offset-aware면 offset-naive로
         if dt.tzinfo is not None:
             dt = dt.replace(tzinfo=None)
         return dt
@@ -260,8 +264,8 @@ def sort_rows(rows: List[UnifiedRow]) -> List[UnifiedRow]:
     def sort_key(idx_row: Tuple[int, UnifiedRow]):
         idx, r = idx_row
         dt_comment = parse_iso_for_sort(r.comment_publishedAt)
-        dt_video = parse_iso_for_sort(r.published_at)
-        dt = dt_comment or dt_video
+        dt_main = parse_iso_for_sort(r.published_at)
+        dt = dt_comment or dt_main
         # datetime.min은 offset-naive이므로 안전 (parse_iso_for_sort도 offset-naive 반환)
         return (dt or datetime.min, idx)
 
@@ -277,7 +281,7 @@ def expand_input_paths(patterns: List[str]) -> List[Path]:
     """
     --inputs 에 들어온 값들을 glob 패턴으로 확장.
     예:
-      -i data/yt1.jsonl data/yt2.jsonl
+      -i preprocess/preprocessing_data/forum_*.jsonl
       -i "preprocess/preprocessing_data/*.jsonl"
     둘 다 지원.
     """
@@ -294,7 +298,31 @@ def expand_input_paths(patterns: List[str]) -> List[Path]:
                 seen.add(m)
                 paths.append(m)
 
+    # 항상 정렬해서 deterministic한 순서 보장
+    paths.sort()
     return paths
+
+
+def summarize_by_source(rows: List[UnifiedRow]) -> Dict[str, Dict[str, int]]:
+    """
+    소스 / doc_type별 개수 집계.
+    doc_type이 없으면 "unknown"으로 칠함.
+    """
+    summary: Dict[str, Dict[str, int]] = {}
+    for r in rows:
+        src = r.source or "unknown"
+        doc_type = str(r.raw.get("doc_type") or "unknown")
+        bucket = summary.setdefault(src, {})
+        bucket[doc_type] = bucket.get(doc_type, 0) + 1
+    return summary
+
+
+def log_summary(prefix: str, rows: List[UnifiedRow]) -> None:
+    summary = summarize_by_source(rows)
+    logger.info("[INFO] %s 레코드 요약:", prefix)
+    for src, type_counts in sorted(summary.items()):
+        parts = [f"{dt}:{cnt}" for dt, cnt in sorted(type_counts.items())]
+        logger.info("  - %s → %s", src, ", ".join(parts))
 
 
 def merge_preprocessed(
@@ -331,11 +359,19 @@ def merge_preprocessed(
         total_valid,
     )
 
+    if not unified_rows:
+        logger.warning("[WARN] 유효한 레코드가 없습니다. 출력 파일을 생성하지 않습니다.")
+        return
+
+    log_summary("통합 전", unified_rows)
+
     if drop_duplicates:
         unified_rows = deduplicate_rows(unified_rows)
 
     if sort_by_time:
         unified_rows = sort_rows(unified_rows)
+
+    log_summary("중복제거/정렬 후", unified_rows)
 
     out_path = Path(output_path)
     if out_path.parent and not out_path.parent.exists():

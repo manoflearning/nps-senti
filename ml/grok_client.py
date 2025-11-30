@@ -8,8 +8,9 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 from openai import OpenAI
+from openai.types import CompletionUsage
 from dotenv import load_dotenv  # ✅ .env 읽기용
-
+from tenacity import retry, stop_after_attempt, wait_fixed  # retry
 
 from ml.prompts import SYSTEM_PROMPT_NPS
 
@@ -24,7 +25,6 @@ class GrokConfig:
 
 
 def load_config() -> GrokConfig:
-    # ✅ .env 파일 읽기 (프로젝트 루트의 .env)
     load_dotenv()
 
     api_key = os.getenv("XAI_API_KEY") or os.getenv("GROK_API_KEY")
@@ -39,6 +39,13 @@ def load_config() -> GrokConfig:
     return GrokConfig(api_key=api_key, base_url=base_url, model=model)
 
 
+# 🔥 DCInside 관련성 강제 보정용 키워드 패턴
+DCINSIDE_NPS_PATTERN = re.compile(
+    r"(국민연금|연금공단|\bNPS\b|national pension|연금|기금|고갈|수익률|보험료|수급|노후|소득대체율)",
+    re.IGNORECASE,
+)
+
+
 class GrokClient:
     def __init__(self, config: Optional[GrokConfig] = None) -> None:
         self.config = config or load_config()
@@ -49,9 +56,6 @@ class GrokClient:
         self.model = self.config.model
 
     def _extract_json(self, text: str) -> Dict[str, Any]:
-        """
-        응답 텍스트에서 JSON 객체만 안전하게 추출.
-        """
         text = text.strip()
         if text.startswith("{") and text.endswith("}"):
             return json.loads(text)
@@ -64,9 +68,25 @@ class GrokClient:
     def _normalize_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """
         확률/라벨/설명 후처리: 0~1 범위, 합≈1, 0.00 포맷에 맞게 정리.
-        """
-        is_related = bool(result.get("is_related", False))
 
+        🔥 변경 핵심:
+          - source == "dcinside" 이고, 텍스트에 국민연금/연금/기금/고갈/노후… 키워드가 있는데
+            모델이 is_related=false를 준 경우, 강제로 is_related=True 로 보정.
+        """
+        text = str(result.get("text") or "")
+        source = str(result.get("source") or "")
+
+        orig_is_related = bool(result.get("is_related", False))
+        is_related = orig_is_related
+
+        # ✅ DCInside 관련성 보정
+        if "dcinside" in source:
+            if not is_related:
+                if DCINSIDE_NPS_PATTERN.search(text):
+                    # 국민연금 관련 키워드가 명시적으로 있으면 강제로 관련으로 본다.
+                    is_related = True
+
+        # is_related 최종 판단
         if not is_related:
             return {
                 "is_related": False,
@@ -77,6 +97,7 @@ class GrokClient:
                 "explanation": "국민연금과 관련 없음",
             }
 
+        # ----- 여기부터는 관련(true)인 경우 확률 정규화 -----
         neg = float(result.get("negative", 0.0) or 0.0)
         neu = float(result.get("neutral", 0.0) or 0.0)
         pos = float(result.get("positive", 0.0) or 0.0)
@@ -84,6 +105,12 @@ class GrokClient:
         neg = max(0.0, neg)
         neu = max(0.0, neu)
         pos = max(0.0, pos)
+
+        # 추가: 욕설/냉소 감지 (dcinside 특화, 웹 샘플 기반)
+        curse_patterns = r"(ㅅㅂ|ㅈ|시발|씨발|지랄|fuck|shit|사기|근들갑|싱글벙글|ㅋㅋ{2,})"
+        if re.search(curse_patterns, text, re.IGNORECASE) and "dcinside" in source:
+            neg += 0.15
+            neg = min(1.0, neg)
 
         s = neg + neu + pos
         if s <= 0.0:
@@ -149,6 +176,7 @@ class GrokClient:
         ]
         return "\n".join(str(x) for x in header_lines)
 
+    @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
     def analyze_sentiment(self, text: str, meta: Dict[str, Any]) -> Dict[str, Any]:
         if not text or not text.strip():
             return {
@@ -168,11 +196,13 @@ class GrokClient:
                 {"role": "system", "content": SYSTEM_PROMPT_NPS},
                 {"role": "user", "content": user_content},
             ],
-            temperature=0.0,
+            temperature=0.1,
             max_tokens=512,
         )
 
         raw = completion.choices[0].message.content or ""
         parsed = self._extract_json(raw)
-        normalized = self._normalize_result(parsed)
+        normalized = self._normalize_result(
+            {**parsed, "text": text, "source": meta.get("source")}
+        )
         return normalized
