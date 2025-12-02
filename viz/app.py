@@ -194,7 +194,7 @@ if comment_data_available:
         st.write("#### 워드클라우드 (한글)")
         img_ko = generate_wordcloud_image(df_wc, lang="ko", min_freq=min_freq_ko)
         if img_ko is None:
-            st.warning("한글 워드클라우드를 만들 충분한 단어가 없습니다.")
+            st.warning("한글 워드클라우드를 생성할 수 없습니다. (폰트 미설치/경로 문제 또는 단어 수 부족)")
         else:
             st.image(img_ko, width=430)
 

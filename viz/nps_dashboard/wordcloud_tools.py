@@ -208,6 +208,9 @@ def generate_wordcloud_image(
         return "gray"
 
     try:
+        if lang == "ko" and FONT_PATH is None:
+            return None
+        
         wc = WordCloud(
             font_path=FONT_PATH,
             width=width,
@@ -218,7 +221,7 @@ def generate_wordcloud_image(
             collocations=False,
             prefer_horizontal=1.0,
         ).generate_from_frequencies(freq_dict)
-    except ValueError:
+    except (ValueError, OSError):
         return None
 
     wc = wc.recolor(color_func=color_func)
