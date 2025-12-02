@@ -210,7 +210,7 @@ def generate_wordcloud_image(
     try:
         if lang == "ko" and FONT_PATH is None:
             return None
-        
+
         wc = WordCloud(
             font_path=FONT_PATH,
             width=width,
