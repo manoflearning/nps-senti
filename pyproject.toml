@@ -9,6 +9,12 @@ dependencies = [
     "requests>=2.32.5",
     "nps-senti-crawl",
     "streamlit>=1.51.0",
+    "pandas>=2.2.0",
+    "plotly>=5.0.0",
+    "wordcloud>=1.9.0",
+    "konlpy>=0.6.0",
+    "jpype1>=1.5.0",
+    "tzdata>=2024.1",
 ]
 
 [dependency-groups]
@@ -16,7 +22,7 @@ dev = [
     "pandas-stubs>=2.3.3.251201",
     "pyright>=1.1.405",
     "pytest>=8.4.2",
-    "ruff>=0.13.0",
+    "ruff>=0.13.0",  
 ]
 
 [tool.uv.sources]
