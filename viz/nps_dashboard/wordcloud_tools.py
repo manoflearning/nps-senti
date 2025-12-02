@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from typing import Protocol, cast
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -14,27 +15,32 @@ from .text_processing import (
     is_korean_word,
 )
 
+
+class OktLike(Protocol):
+    def nouns(self, phrase: str) -> list[str]: ...
+
+
 try:
-    from konlpy.tag import Okt
-except Exception as e:
-    Okt = None
+    from konlpy.tag import Okt as _Okt
+except Exception as e:  # pragma: no cover
+    _Okt = None
     _KONLPY_IMPORT_ERROR = e
 else:
     _KONLPY_IMPORT_ERROR = None
 
 
-def _require_okt():
-    if Okt is None:
+def _require_okt() -> OktLike:
+    if _Okt is None:
         raise ImportError(
-            "한국어 워드클라우드는 konlpy(Okt)가 필요합니다."
+            "한국어 워드클라우드는 konlpy(Okt)가 필요합니다. "
         ) from _KONLPY_IMPORT_ERROR
-    return Okt()
+
+    return cast(OktLike, _Okt())
 
 
 def _iter_row_text(row: pd.Series, df_cols: list[str]) -> str | None:
     """
-    원본 로직 유지:
-    - doc_type == 'comment'면 comment_text 우선(없으면 comment fallback)
+    - doc_type == 'comment'면 comment_text만 사용 (없으면 comment fallback)
     - 그 외에는 존재하는 텍스트 컬럼들을 합쳐 사용
     """
     label = row.get("sentiment_label") or row.get("label")
@@ -42,6 +48,7 @@ def _iter_row_text(row: pd.Series, df_cols: list[str]) -> str | None:
         return None
 
     doc_type = row.get("doc_type")
+
     if doc_type == "comment":
         v = row.get("comment_text")
         if v is None or (isinstance(v, float) and pd.isna(v)):
@@ -68,6 +75,7 @@ def _iter_row_text(row: pd.Series, df_cols: list[str]) -> str | None:
         s = str(v).strip()
         if s:
             parts.append(s)
+
     merged = " ".join(parts).strip()
     return merged or None
 
@@ -75,12 +83,12 @@ def _iter_row_text(row: pd.Series, df_cols: list[str]) -> str | None:
 def compute_word_stats(
     df_subset: pd.DataFrame,
     top_n: int | None = None,
-    lang: str = "ko",  # "ko" or "en"
+    lang: str = "ko",
     min_freq: int = 2,
 ):
     """
-    한국어(ko): KoNLPy(Okt) 명사 추출만 사용 (별도 한국어 불용어 파일 X)
-    영어(en): wordcloud 기본 STOPWORDS + (선택) stopwords-en.txt
+    ko: KoNLPy(Okt) nouns 기반(한국어 불용어 파일 X)
+    en: wordcloud 기본 STOPWORDS + (선택) stopwords-en.txt
     """
     en_sw = get_en_stopwords()
 
@@ -97,24 +105,22 @@ def compute_word_stats(
     if not text_cols_priority:
         return [], {}, {}
 
-    okt = None
     if lang == "ko":
         okt = _require_okt()
 
-    for _, row in df_subset.iterrows():
-        label = row.get("sentiment_label") or row.get("label")
-        if label not in ("negative", "neutral", "positive"):
-            continue
+        for _, row in df_subset.iterrows():
+            label = row.get("sentiment_label") or row.get("label")
+            if label not in ("negative", "neutral", "positive"):
+                continue
 
-        raw_text = _iter_row_text(row, text_cols_priority)
-        if not raw_text:
-            continue
+            raw_text = _iter_row_text(row, text_cols_priority)
+            if not raw_text:
+                continue
 
-        cleaned = clean_text(raw_text)
-        if not cleaned:
-            continue
+            cleaned = clean_text(raw_text)
+            if not cleaned:
+                continue
 
-        if lang == "ko":
             tokens = okt.nouns(cleaned)
             for tok in tokens:
                 tok = str(tok).strip()
@@ -125,7 +131,20 @@ def compute_word_stats(
                 freq[tok] += 1
                 sent_counts[tok][label] += 1
 
-        elif lang == "en":
+    elif lang == "en":
+        for _, row in df_subset.iterrows():
+            label = row.get("sentiment_label") or row.get("label")
+            if label not in ("negative", "neutral", "positive"):
+                continue
+
+            raw_text = _iter_row_text(row, text_cols_priority)
+            if not raw_text:
+                continue
+
+            cleaned = clean_text(raw_text)
+            if not cleaned:
+                continue
+
             for tok in cleaned.split():
                 tok = tok.lower().strip()
                 if not is_english_word(tok):
@@ -134,8 +153,9 @@ def compute_word_stats(
                     continue
                 freq[tok] += 1
                 sent_counts[tok][label] += 1
-        else:
-            continue
+
+    else:
+        return [], {}, {}
 
     words = [w for w, c in freq.items() if c >= min_freq]
     if not words:
@@ -145,7 +165,11 @@ def compute_word_stats(
     if top_n is not None:
         words = words[:top_n]
 
-    return words, {w: freq[w] for w in words}, {w: dict(sent_counts[w]) for w in words}
+    return (
+        words,
+        {w: int(freq[w]) for w in words},
+        {w: dict(sent_counts[w]) for w in words},
+    )
 
 
 def generate_wordcloud_image(
@@ -179,10 +203,9 @@ def generate_wordcloud_image(
         score = sentiment_avg.get(word, 0.0)
         if score > 0.05:
             return "blue"
-        elif score < -0.05:
+        if score < -0.05:
             return "red"
-        else:
-            return "gray"
+        return "gray"
 
     try:
         wc = WordCloud(
@@ -211,12 +234,15 @@ def build_sankey_top_words(df_subset: pd.DataFrame, top_n: int = 8):
     node_labels = words + sentiment_labels
     node_idx = {lab: i for i, lab in enumerate(node_labels)}
 
-    sources, targets, values, link_colors = [], [], [], []
+    sources: list[int] = []
+    targets: list[int] = []
+    values: list[int] = []
+    link_colors: list[str] = []
 
     for w in words:
         counts = sent_counts[w]
         for s in sentiment_labels:
-            v = counts[s]
+            v = int(counts.get(s, 0))
             if v <= 0:
                 continue
             sources.append(node_idx[w])

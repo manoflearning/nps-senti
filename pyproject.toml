@@ -13,6 +13,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "pandas-stubs>=2.3.3.251201",
     "pyright>=1.1.405",
     "pytest>=8.4.2",
     "ruff>=0.13.0",
@@ -20,3 +21,20 @@ dev = [
 
 [tool.uv.sources]
 nps-senti-crawl = { path = "crawl" }
+
+[tool.pyright]
+include = ["viz"]
+exclude = [
+  ".venv",
+  "**/__pycache__",
+  "viz/app.py"
+]
+
+typeCheckingMode = "basic"
+
+reportMissingImports = "none"
+reportMissingTypeStubs = "none"
+reportUnknownMemberType = "none"
+reportUnknownArgumentType = "none"
+reportUnknownVariableType = "none"
+reportUnknownParameterType = "none"
