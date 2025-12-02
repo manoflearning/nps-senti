@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .grok_client import GrokClient, DCINSIDE_NPS_PATTERN  # 패턴 import
+from .grok_client import GrokClient #, DCINSIDE_NPS_PATTERN  # 패턴 import
 
 
 logger = logging.getLogger(__name__)
@@ -68,21 +68,21 @@ def extract_text_and_meta(obj: Dict[str, Any]) -> TextAndMeta:
         )
         text = title
 
-    # ✅ dcinside: 키워드 없으면 사전 무관 처리 (효율성: API 호출 피함)
-    if "dcinside" in source.lower():
-        if not DCINSIDE_NPS_PATTERN.search(text):
-            logger.info("[INFO] dcinside지만 NPS 키워드 없음: 무관 사전 처리. text='%s'", text[:50])
-            text = ""  # 무관 트리거
-    else:
-        # 다른 소스: 짧은 텍스트 fallback
-        min_len = 5
-        if len(text) < min_len:
-            logger.warning(
-                "[WARN] id=%s 텍스트 너무 짧음 (len=%d), 무관 처리.",
-                identifier,
-                len(text),
-            )
-            text = ""
+    # # ✅ dcinside: 키워드 없으면 사전 무관 처리 (효율성: API 호출 피함)
+    # if "dcinside" in source.lower():
+    #     if not DCINSIDE_NPS_PATTERN.search(text):
+    #         logger.info("[INFO] dcinside지만 NPS 키워드 없음: 무관 사전 처리. text='%s'", text[:50])
+    #         text = ""  # 무관 트리거
+    # else:
+    # 다른 소스: 짧은 텍스트 fallback
+    min_len = 5
+    if len(text) < min_len:
+        logger.warning(
+            "[WARN] id=%s 텍스트 너무 짧음 (len=%d), 무관 처리.",
+            identifier,
+            len(text),
+        )
+        text = ""
 
     meta: Dict[str, Any] = {
         "id": identifier,

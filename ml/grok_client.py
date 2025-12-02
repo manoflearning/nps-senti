@@ -38,11 +38,11 @@ def load_config() -> GrokConfig:
     return GrokConfig(api_key=api_key, base_url=base_url, model=model)
 
 
-# 🔥 DCInside 관련성 강제 보정용 키워드 패턴 (확장: 미납, 개혁, 다단계, 파산 등 추가)
-DCINSIDE_NPS_PATTERN = re.compile(
-    r"(국민연금|연금공단|\bNPS\b|national pension|연금|기금|고갈|수익률|보험료|수급|노후|소득대체율|미납|개혁|다단계|파산)",
-    re.IGNORECASE,
-)
+# # 🔥 DCInside 관련성 강제 보정용 키워드 패턴 (확장: 미납, 개혁, 다단계, 파산 등 추가)
+# DCINSIDE_NPS_PATTERN = re.compile(
+#     r"(국민연금|연금공단|\bNPS\b|national pension|연금|기금|고갈|수익률|보험료|수급|노후|소득대체율|미납|개혁|다단계|파산)",
+#     re.IGNORECASE,
+# )
 
 
 class GrokClient:
@@ -79,11 +79,11 @@ class GrokClient:
         orig_is_related = bool(result.get("is_related", False))
         is_related = orig_is_related
 
-        # ✅ DCInside 관련성 보정 (키워드 있으면 true 강제)
-        if "dcinside" in source.lower():
-            if not is_related and DCINSIDE_NPS_PATTERN.search(text):
-                is_related = True
-                print(f"[보정] dcinside 텍스트에 NPS 키워드 감지: is_related false → true")
+        # # ✅ DCInside 관련성 보정 (키워드 있으면 true 강제)
+        # if "dcinside" in source.lower():
+        #     if not is_related and DCINSIDE_NPS_PATTERN.search(text):
+        #         is_related = True
+        #         print(f"[보정] dcinside 텍스트에 NPS 키워드 감지: is_related false → true")
 
         # is_related 최종 판단
         if not is_related:
