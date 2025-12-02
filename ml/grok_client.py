@@ -38,9 +38,9 @@ def load_config() -> GrokConfig:
     return GrokConfig(api_key=api_key, base_url=base_url, model=model)
 
 
-# 🔥 DCInside 관련성 강제 보정용 키워드 패턴
+# 🔥 DCInside 관련성 강제 보정용 키워드 패턴 (확장: 미납, 개혁, 다단계, 파산 등 추가)
 DCINSIDE_NPS_PATTERN = re.compile(
-    r"(국민연금|연금공단|\bNPS\b|national pension|연금|기금|고갈|수익률|보험료|수급|노후|소득대체율)",
+    r"(국민연금|연금공단|\bNPS\b|national pension|연금|기금|고갈|수익률|보험료|수급|노후|소득대체율|미납|개혁|다단계|파산)",
     re.IGNORECASE,
 )
 
@@ -69,8 +69,9 @@ class GrokClient:
         확률/라벨/설명 후처리: 0~1 범위, 합≈1, 0.00 포맷에 맞게 정리.
 
         🔥 변경 핵심:
-          - source == "dcinside" 이고, 텍스트에 국민연금/연금/기금/고갈/노후… 키워드가 있는데
+          - source == "dcinside" 이고, 텍스트에 국민연금/연금/기금/고갈/노후/미납/개혁… 키워드가 있는데
             모델이 is_related=false를 준 경우, 강제로 is_related=True 로 보정.
+          - 보정 시 로그 기록 (유지보수성).
         """
         text = str(result.get("text") or "")
         source = str(result.get("source") or "")
@@ -78,12 +79,11 @@ class GrokClient:
         orig_is_related = bool(result.get("is_related", False))
         is_related = orig_is_related
 
-        # ✅ DCInside 관련성 보정
-        if "dcinside" in source:
-            if not is_related:
-                if DCINSIDE_NPS_PATTERN.search(text):
-                    # 국민연금 관련 키워드가 명시적으로 있으면 강제로 관련으로 본다.
-                    is_related = True
+        # ✅ DCInside 관련성 보정 (키워드 있으면 true 강제)
+        if "dcinside" in source.lower():
+            if not is_related and DCINSIDE_NPS_PATTERN.search(text):
+                is_related = True
+                print(f"[보정] dcinside 텍스트에 NPS 키워드 감지: is_related false → true")
 
         # is_related 최종 판단
         if not is_related:

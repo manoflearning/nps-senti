@@ -11,9 +11,9 @@ from .grok_client import GrokClient
 
 
 logger = logging.getLogger(__name__)  # 추가
-# DCInside용 연금 관련 키워드 패턴 (grok_client와 동일하게 유지)
+# DCInside용 연금 관련 키워드 패턴 (grok_client와 동일하게 유지, 확장)
 DCINSIDE_NPS_PATTERN = re.compile(
-    r"(국민연금|연금공단|\bNPS\b|national pension|연금|기금|고갈|수익률|보험료|수급|노후|소득대체율)",
+    r"(국민연금|연금공단|\bNPS\b|national pension|연금|기금|고갈|수익률|보험료|수급|노후|소득대체율|미납|개혁|다단계|파산)",
     re.IGNORECASE,
 )
 
@@ -203,6 +203,7 @@ def parse_grok_response(raw_text: str | Dict[str, Any]) -> SentimentResult:
     """
     Grok가 반환한 텍스트 또는 딕셔너리를 SentimentResult로 변환하고
     규칙에 맞게 값들을 정리한다.
+    추가: dcinside 보정 강화, positive 과다 시 바이어스 경고 로그 (윤리성 ↑).
     """
     if isinstance(raw_text, str):
         data = _extract_json(raw_text)
@@ -215,10 +216,11 @@ def parse_grok_response(raw_text: str | Dict[str, Any]) -> SentimentResult:
     orig_is_related = _coerce_bool(data.get("is_related", False))
     is_related = orig_is_related
 
-    # ✅ DCInside 관련성 보정
-    if "dcinside" in source and not is_related:
-        if DCINSIDE_NPS_PATTERN.search(text):
+    # ✅ DCInside 관련성 보정 (키워드 있으면 true 강제, 로그 기록)
+    if "dcinside" in source.lower():
+        if not is_related and DCINSIDE_NPS_PATTERN.search(text):
             is_related = True
+            logger.info(f"[보정] dcinside 텍스트에 NPS 키워드 감지: is_related false → true. text='{text[:50]}...'")
 
     negative = _coerce_float(data.get("negative", 0.0))
     neutral = _coerce_float(data.get("neutral", 0.0))
@@ -241,8 +243,8 @@ def parse_grok_response(raw_text: str | Dict[str, Any]) -> SentimentResult:
     # 관련(true)이면 확률 재정규화
     negative, neutral, positive = _renormalize_probs(negative, neutral, positive)
 
-    # 바이어스 체크
-    if positive > 0.8:
+    # 바이어스 체크: positive >0.7 시 로그 (dcinside 부정 많아서 강화)
+    if positive > 0.7:
         logger.warning("[WARN] High positive bias detected: positive=%.2f", positive)
 
     label_ko = _decide_label(negative, neutral, positive)

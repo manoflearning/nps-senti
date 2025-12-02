@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .grok_client import GrokClient
+from .grok_client import GrokClient, DCINSIDE_NPS_PATTERN  # 패턴 import
 
 
 logger = logging.getLogger(__name__)
@@ -33,81 +33,48 @@ def extract_text_and_meta(obj: Dict[str, Any]) -> TextAndMeta:
     다양한 소스(dcinside, bobaedream, youtube, gdelt, etc.)를 공통 포맷으로 맞춰서
     GrokClient.analyze_sentiment 에 넘기기 위한 텍스트와 메타데이터를 만든다.
 
-    ⚙ 변경사항:
-      - dcinside 는 짧은 댓글("고갈 ㅋ" 등)도 그대로 모델에 보내도록
-        최소 길이 필터를 끈다.
+    🔥 변경 핵심:
+      - doc_type == "post": title + "\n\n" + text/body/content
+      - doc_type == "comment": title + "\n\n" + text/body/content + "\n\n" + comment_text
+      - dcinside: 짧은 텍스트도 그대로 (최소 길이 필터 off), 키워드 없으면 사전 무관 (효율성 ↑)
+      - 다른 소스: min_len=5
     """
     source = obj.get("source") or ""
     lang = obj.get("lang") or None
     published_at = obj.get("published_at") or None
     identifier = obj.get("id") or obj.get("_id") or None
+    doc_type = obj.get("doc_type") or "post"  # 기본 post
 
-    # doc_type 추론
-    doc_type = obj.get("doc_type")
-    if not doc_type:
-        if source == "youtube":
-            doc_type = "video"
-        elif source in ("naver_news", "news", "gdelt"):
-            doc_type = "article"
-        else:
-            doc_type = "post"
-
-    text_candidates: List[Optional[str]] = []
-
-    # 1) 포럼류(디시, 보배 등): combined_text
-    if "combined_text" in obj:
-        text_candidates.append(obj.get("combined_text"))
-
-    # 2) 이전 버전 전처리: text_clean
-    if "text_clean" in obj:
-        text_candidates.append(obj.get("text_clean"))
-
-    # 3) 유튜브 (최신 minimal 버전): title + description 조합
-    if source == "youtube":
-        title = (obj.get("title") or "").strip()
-        desc = (obj.get("description") or "").strip()
-        if title and desc:
-            text_candidates.append(f"{title}\n\n{desc}")
-        elif title:
-            text_candidates.append(title)
-
-    # 4) GDELT 기사: title + text 조합
-    if source == "gdelt":
-        title = (obj.get("title") or "").strip()
-        body = (obj.get("text") or "").strip()
-        if title and body:
-            text_candidates.append(f"{title}\n\n{body}")
-        elif body:
-            text_candidates.append(body)
-
-    # 5) 댓글만 있는 경우: comment_text
-    if "comment_text" in obj:
-        text_candidates.append(obj.get("comment_text"))
-
-    # 6) 일반 기사/텍스트: text, body, content 등
-    for key in ("text", "body", "content"):
+    title = (obj.get("title") or "").strip()
+    text_body = ""
+    for key in ("text", "body", "content", "combined_text", "text_clean"):
         if key in obj:
-            text_candidates.append(obj.get(key))
-
-    # 7) 그래도 없으면: title만이라도
-    if "title" in obj:
-        text_candidates.append(obj.get("title"))
-
-    text = ""
-    for cand in text_candidates:
-        if cand and isinstance(cand, str) and cand.strip():
-            text = cand.strip()
+            text_body = (obj.get(key) or "").strip()
             break
+
+    comment_text = (obj.get("comment_text") or "").strip()
+
+    # ✅ doc_type별 텍스트 조합
+    if doc_type == "post":
+        text = f"{title}\n\n{text_body}" if title and text_body else title or text_body
+    elif doc_type == "comment":
+        text = f"{title}\n\n{text_body}\n\n{comment_text}" if title and text_body and comment_text else f"{title}\n\n{text_body or comment_text}"
+    else:  # 기타 (video, article 등)
+        text = f"{title}\n\n{text_body}" if title else text_body
 
     if not text:
         logger.warning(
             "[WARN] id=%s 에 텍스트가 비어 있음, 제목만 사용합니다.", identifier
         )
-        title_fallback = (obj.get("title") or "").strip()
-        text = title_fallback
+        text = title
 
-    # ✅ 변경 핵심: dcinside 는 짧은 댓글도 그대로 보냄
-    if source != "dcinside":
+    # ✅ dcinside: 키워드 없으면 사전 무관 처리 (효율성: API 호출 피함)
+    if "dcinside" in source.lower():
+        if not DCINSIDE_NPS_PATTERN.search(text):
+            logger.info("[INFO] dcinside지만 NPS 키워드 없음: 무관 사전 처리. text='%s'", text[:50])
+            text = ""  # 무관 트리거
+    else:
+        # 다른 소스: 짧은 텍스트 fallback
         min_len = 5
         if len(text) < min_len:
             logger.warning(
@@ -115,7 +82,7 @@ def extract_text_and_meta(obj: Dict[str, Any]) -> TextAndMeta:
                 identifier,
                 len(text),
             )
-            text = ""  # 이 경우는 GrokClient 쪽에서 무관 처리
+            text = ""
 
     meta: Dict[str, Any] = {
         "id": identifier,
