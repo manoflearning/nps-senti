@@ -8,6 +8,7 @@ dependencies = [
     "dotenv>=0.9.9",
     "requests>=2.32.5",
     "nps-senti-crawl",
+    "streamlit>=1.51.0",
 ]
 
 [dependency-groups]

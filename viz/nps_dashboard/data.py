@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pandas as pd
-import numpy as np
 import streamlit as st
 
 def _read_one_file(p: Path) -> list[dict]:
@@ -62,7 +61,8 @@ def load_data(path: str) -> pd.DataFrame:
     df = pd.json_normalize(data)
 
     if "is_related" in df.columns:
-        df = df[df["is_related"] == True].copy()
+        df = df[df["is_related"].fillna(False).astype(bool)].copy()
+
 
     sentiment_cols = ["sentiment.negative", "sentiment.neutral", "sentiment.positive"]
 
