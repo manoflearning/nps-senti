@@ -22,12 +22,14 @@ except Exception as e:
 else:
     _KONLPY_IMPORT_ERROR = None
 
+
 def _require_okt():
     if Okt is None:
         raise ImportError(
             "한국어 워드클라우드는 konlpy(Okt)가 필요합니다."
         ) from _KONLPY_IMPORT_ERROR
     return Okt()
+
 
 def _iter_row_text(row: pd.Series, df_cols: list[str]) -> str | None:
     """
@@ -69,6 +71,7 @@ def _iter_row_text(row: pd.Series, df_cols: list[str]) -> str | None:
     merged = " ".join(parts).strip()
     return merged or None
 
+
 def compute_word_stats(
     df_subset: pd.DataFrame,
     top_n: int | None = None,
@@ -76,8 +79,8 @@ def compute_word_stats(
     min_freq: int = 2,
 ):
     """
-     한국어(ko): KoNLPy(Okt) 명사 추출만 사용 (별도 한국어 불용어 파일 X)
-     영어(en): wordcloud 기본 STOPWORDS + (선택) stopwords-en.txt
+    한국어(ko): KoNLPy(Okt) 명사 추출만 사용 (별도 한국어 불용어 파일 X)
+    영어(en): wordcloud 기본 STOPWORDS + (선택) stopwords-en.txt
     """
     en_sw = get_en_stopwords()
 
@@ -86,7 +89,11 @@ def compute_word_stats(
         lambda: {"negative": 0, "neutral": 0, "positive": 0}
     )
 
-    text_cols_priority = [c for c in ["comment", "comment_text", "text", "title"] if c in df_subset.columns]
+    text_cols_priority = [
+        c
+        for c in ["comment", "comment_text", "text", "title"]
+        if c in df_subset.columns
+    ]
     if not text_cols_priority:
         return [], {}, {}
 
@@ -140,6 +147,7 @@ def compute_word_stats(
 
     return words, {w: freq[w] for w in words}, {w: dict(sent_counts[w]) for w in words}
 
+
 def generate_wordcloud_image(
     df_subset: pd.DataFrame,
     lang: str = "ko",
@@ -192,6 +200,7 @@ def generate_wordcloud_image(
 
     wc = wc.recolor(color_func=color_func)
     return wc.to_array()
+
 
 def build_sankey_top_words(df_subset: pd.DataFrame, top_n: int = 8):
     words, _, sent_counts = compute_word_stats(df_subset, top_n=top_n, lang="ko")

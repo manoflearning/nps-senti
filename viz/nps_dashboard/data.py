@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+
 def _read_one_file(p: Path) -> list[dict]:
     """단일 파일(.jsonl/.json)에서 list[dict] 형태로 로드"""
     if p.suffix.lower() == ".jsonl":
@@ -39,14 +40,13 @@ def _read_one_file(p: Path) -> list[dict]:
 
     return []
 
+
 @st.cache_data
 def load_data(path: str) -> pd.DataFrame:
     p = Path(path)
 
     if p.is_dir():
-        files = sorted(
-            [*p.rglob("*.jsonl"), *p.rglob("*.json")]
-        )
+        files = sorted([*p.rglob("*.jsonl"), *p.rglob("*.json")])
         if not files:
             raise FileNotFoundError(f"데이터 폴더에 .jsonl/.json 파일이 없습니다: {p}")
 
@@ -63,7 +63,6 @@ def load_data(path: str) -> pd.DataFrame:
     if "is_related" in df.columns:
         df = df[df["is_related"].fillna(False).astype(bool)].copy()
 
-
     sentiment_cols = ["sentiment.negative", "sentiment.neutral", "sentiment.positive"]
 
     if "sentiment" in df.columns and not set(sentiment_cols).issubset(df.columns):
@@ -76,7 +75,7 @@ def load_data(path: str) -> pd.DataFrame:
 
     candidates = {
         "sentiment.negative": ["negative", "neg", "sentiment_negative", "neg_score"],
-        "sentiment.neutral":  ["neutral", "neu", "sentiment_neutral", "neu_score"],
+        "sentiment.neutral": ["neutral", "neu", "sentiment_neutral", "neu_score"],
         "sentiment.positive": ["positive", "pos", "sentiment_positive", "pos_score"],
     }
     for tgt, keys in candidates.items():
@@ -89,10 +88,18 @@ def load_data(path: str) -> pd.DataFrame:
 
     keep = [
         "doc_type",
-        "comment", "comment_text", "text", "title",
-        "source", "published_at", "comment_publishedAt", "is_related",
+        "comment",
+        "comment_text",
+        "text",
+        "title",
+        "source",
+        "published_at",
+        "comment_publishedAt",
+        "is_related",
         "sentiment_label",
-        "sentiment.negative", "sentiment.neutral", "sentiment.positive",
+        "sentiment.negative",
+        "sentiment.neutral",
+        "sentiment.positive",
     ]
     cols = [c for c in keep if c in df.columns]
     df = df[cols].copy()
@@ -103,21 +110,29 @@ def load_data(path: str) -> pd.DataFrame:
     if "published_at" in df.columns:
         mask_gdelt = src.eq("gdelt")
         if mask_gdelt.any():
-            dt_raw.loc[mask_gdelt] = pd.to_datetime(df.loc[mask_gdelt, "published_at"], errors="coerce", utc=True)
+            dt_raw.loc[mask_gdelt] = pd.to_datetime(
+                df.loc[mask_gdelt, "published_at"], errors="coerce", utc=True
+            )
 
     if "comment_publishedAt" in df.columns:
         mask_youtube = src.eq("youtube")
         if mask_youtube.any():
-            dt_raw.loc[mask_youtube] = pd.to_datetime(df.loc[mask_youtube, "comment_publishedAt"], errors="coerce", utc=True)
+            dt_raw.loc[mask_youtube] = pd.to_datetime(
+                df.loc[mask_youtube, "comment_publishedAt"], errors="coerce", utc=True
+            )
 
     mask_other = ~src.isin(["gdelt", "youtube"])
     if mask_other.any():
         if "comment_publishedAt" in df.columns:
-            dt_raw.loc[mask_other] = pd.to_datetime(df.loc[mask_other, "comment_publishedAt"], errors="coerce", utc=True)
+            dt_raw.loc[mask_other] = pd.to_datetime(
+                df.loc[mask_other, "comment_publishedAt"], errors="coerce", utc=True
+            )
         if "published_at" in df.columns:
             fill_mask = mask_other & dt_raw.isna()
             if fill_mask.any():
-                dt_raw.loc[fill_mask] = pd.to_datetime(df.loc[fill_mask, "published_at"], errors="coerce", utc=True)
+                dt_raw.loc[fill_mask] = pd.to_datetime(
+                    df.loc[fill_mask, "published_at"], errors="coerce", utc=True
+                )
 
     dt = dt_raw.dt.tz_convert("Asia/Seoul")
     df["datetime"] = dt.dt.tz_localize(None)
