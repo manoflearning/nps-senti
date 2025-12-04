@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .grok_client import GrokClient #, DCINSIDE_NPS_PATTERN  # 패턴 import
+from .grok_client import GrokClient  # , DCINSIDE_NPS_PATTERN  # 패턴 import
 
 
 logger = logging.getLogger(__name__)
@@ -58,7 +58,11 @@ def extract_text_and_meta(obj: Dict[str, Any]) -> TextAndMeta:
     if doc_type == "post":
         text = f"{title}\n\n{text_body}" if title and text_body else title or text_body
     elif doc_type == "comment":
-        text = f"{title}\n\n{text_body}\n\n{comment_text}" if title and text_body and comment_text else f"{title}\n\n{text_body or comment_text}"
+        text = (
+            f"{title}\n\n{text_body}\n\n{comment_text}"
+            if title and text_body and comment_text
+            else f"{title}\n\n{text_body or comment_text}"
+        )
     else:  # 기타 (video, article 등)
         text = f"{title}\n\n{text_body}" if title else text_body
 
