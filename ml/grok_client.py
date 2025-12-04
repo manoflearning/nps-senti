@@ -33,7 +33,7 @@ def load_config() -> GrokConfig:
         )
 
     base_url = os.getenv("XAI_BASE_URL", "https://api.x.ai/v1")
-    model = os.getenv("GROK_MODEL", "grok-4-fast-reasoning")
+    model = os.getenv("GROK_MODEL", "grok-4-1-fast-reasoning")
 
     return GrokConfig(api_key=api_key, base_url=base_url, model=model)
 

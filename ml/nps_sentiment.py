@@ -1,9 +1,7 @@
-# ml/nps_sentiment.py
 from __future__ import annotations
 
 import json
 import logging  # 추가: 바이어스 로그
-import re
 from dataclasses import asdict, dataclass
 from typing import Any, Dict
 
@@ -211,7 +209,6 @@ def parse_grok_response(raw_text: str | Dict[str, Any]) -> SentimentResult:
         data = raw_text
 
     text = str(data.get("text") or "")
-    source = str(data.get("source") or "")
 
     orig_is_related = _coerce_bool(data.get("is_related", False))
     is_related = orig_is_related

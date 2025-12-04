@@ -13,7 +13,7 @@ except Exception:
     pass
 
 # 기본값들 (환경변수로 덮어쓸 수 있게 설계)
-DEFAULT_MODEL = os.getenv("XAI_MODEL", "grok-4-fast-reasoning")
+DEFAULT_MODEL = os.getenv("XAI_MODEL", "grok-4-1-fast-reasoning")
 DEFAULT_API_BASE = os.getenv("XAI_API_BASE", "https://api.x.ai/v1")
 ENV_API_KEYS = ("XAI_API_KEY", "GROK_API_KEY")
 
