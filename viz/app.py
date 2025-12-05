@@ -109,7 +109,7 @@ article_count = len(df_articles)
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    st.metric("전체 분석 댓글 수", total_comments)
+    st.metric("전체 분석 댓글 수", f"{total_comments:,}") # type: ignore
 with col2:
     st.metric("부정 비율", f"{neg_ratio * 100:.1f}%")
 with col3:
@@ -160,19 +160,31 @@ if comment_data_available:
     # (2) 사이트별 댓글 비율 파이차트
     with pie_col2:
         site_counts = (
-            df["source"].value_counts().rename_axis("source").reset_index(name="count")
+            df[df["source"] != "gdelt"]["source"]
+            .value_counts()
+            .rename_axis("source")
+            .reset_index(name="count")
         )
+        site_order = [
+            s for s in site_counts["source"].unique().tolist()
+            if s != "gdelt"
+        ]
         pie2 = (
             alt.Chart(site_counts)
             .mark_arc()
             .encode(
                 theta="count:Q",
-                color=alt.Color("source:N", title="사이트"),
+                color=alt.Color(
+                    "source:N",
+                    title="사이트",
+                    scale=alt.Scale(domain=site_order),  # 🔹 여기서 gdelt 라벨 제거
+                ),
                 tooltip=["source", "count"],
             )
             .properties(title="사이트별 댓글 비율", width=350, height=300)
         )
         st.altair_chart(pie2, use_container_width=False)
+
 
     st.markdown("### 워드클라우드 (한글/영어, 전체 기준)")
 
@@ -236,12 +248,16 @@ if comment_data_available:
             .reset_index(name="count")
         )
 
-        source_order = (
-            source_sent.groupby("source")["count"]
-            .sum()
-            .sort_values(ascending=False)
-            .index.tolist()
-        )
+        source_order = [
+            s
+            for s in (
+                source_sent.groupby("source")["count"]
+                .sum()
+                .sort_values(ascending=False)
+                .index.tolist()
+            )
+            if s != "gdelt"   # 🔹 gdelt 제거
+        ]
 
         stack_chart = (
             alt.Chart(source_sent)
@@ -249,7 +265,7 @@ if comment_data_available:
             .transform_calculate(pct="datum.count / datum.total")
             .mark_bar()
             .encode(
-                x=alt.X("source:N", title="사이트", sort=source_order),
+                x=alt.X("source:N", title="사이트", sort=source_order, scale=alt.Scale(domain=source_order)),
                 y=alt.Y(
                     "count:Q",
                     stack="normalize",
@@ -280,26 +296,8 @@ if comment_data_available:
                 ),
             )
         )
+        st.altair_chart(stack_chart, use_container_width=True)
 
-        top_counts = (
-            df_sites["source"]
-            .value_counts()
-            .reset_index(name="count")
-            .rename(columns={"index": "source"})
-            .head(5)
-        )
-        bar_top = (
-            alt.Chart(top_counts)
-            .mark_bar()
-            .encode(
-                y=alt.Y("source:N", sort="-x", title="사이트"),
-                x=alt.X("count:Q", title="댓글 수"),
-                tooltip=["source", "count"],
-            )
-            .properties(height=200, title=alt.TitleParams("댓글 수 TOP5", fontSize=16))
-        )
-
-        st.altair_chart(stack_chart | bar_top, use_container_width=True)
 
     st.markdown("### 리커트 차트 (사이트별 부정/중립/긍정 균형)")
 
@@ -356,12 +354,16 @@ if comment_data_available:
             )
 
         likert_df = pd.DataFrame(segments)
+        likert_order = [
+            s for s in likert_df["source"].unique().tolist()
+            if s != "gdelt"   # 🔹 gdelt 라벨 제거
+        ]
 
         likert_chart = (
             alt.Chart(likert_df)
             .mark_bar()
             .encode(
-                y=alt.Y("source:N", title="사이트"),
+                y=alt.Y("source:N", title="사이트", scale=alt.Scale(domain=likert_order)),
                 x=alt.X(
                     "x0:Q",
                     title="← 부정 / 중립 / 긍정 →",
