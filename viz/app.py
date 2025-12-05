@@ -8,6 +8,13 @@ import altair as alt
 from nps_dashboard.config import DATA_PATH, ARTICLE_SOURCES, SENTIMENT_OPTIONS
 from nps_dashboard.data import load_data
 from nps_dashboard.wordcloud_tools import generate_wordcloud_image
+from nps_dashboard.chart_helpers import (
+    render_chart_with_selection,
+    show_bucket_analysis_for_selection,
+    show_grok_analysis_for_bucket,
+    parse_date_selection_value,
+    format_hour_label,
+)
 
 
 # ----------------------
@@ -31,6 +38,34 @@ def get_wordcloud_image(
     )
 
 
+def _build_article_sample_rows(day_articles: pd.DataFrame) -> list[dict[str, str]]:
+    samples: list[dict[str, str]] = []
+    if day_articles.empty:
+        return samples
+
+    for _, row in day_articles.head(5).iterrows():
+        title = str(row.get("title") or "").strip()
+        body = str(row.get("text") or "").strip()
+        snippet = body[:220].replace("\n", " ")
+        explanation_parts: list[str] = []
+        if title:
+            explanation_parts.append(f"제목: {title}")
+        if snippet:
+            explanation_parts.append(f"본문: {snippet}")
+        if not explanation_parts:
+            continue
+        samples.append(
+            {
+                "text": title or snippet[:120],
+                "explanation": " | ".join(explanation_parts),
+                "display_explanation": title or snippet[:120],
+                "sentiment_label": row.get("source", "article"),
+            }
+        )
+
+    return samples
+
+
 # ----------------------
 # 0. Streamlit 기본 설정
 # ----------------------
@@ -40,7 +75,7 @@ st.set_page_config(
 )
 
 st.title("국민연금 인터넷 여론 분석 대시보드")
-st.subheader("by. TEAM FullRunAI")
+st.subheader("by. FullRunAI Team")
 
 # ----------------------
 # 1. 데이터 로딩
@@ -50,7 +85,7 @@ df_raw = load_data(DATA_PATH)
 # ------------------------------------------------------------
 # 글로벌 필터: 소스 + 기간
 # ------------------------------------------------------------
-st.markdown("### 🔎 필터 (전체 적용)")
+st.markdown("### ⚙️ 필터 (전체 적용)")
 
 available_sources_all = sorted(df_raw["source"].dropna().unique().tolist())
 filter_left, filter_right, filter_meta = st.columns([1.6, 1.6, 1.8])
@@ -115,6 +150,9 @@ df_articles = df_filtered[df_filtered["source"].isin(ARTICLE_SOURCES)].copy()
 # 기존 코드 호환용: df는 댓글 데이터
 df = df_comments
 
+if "date" in df_articles:
+    df_articles["date_only"] = df_articles["date"].dt.date  # type: ignore
+
 with filter_meta:
     st.metric("필터 적용 댓글 수", f"{len(df_comments):,}")
     st.caption(f"기사(gdelt) {len(df_articles):,}건은 별도 섹션에서 요약")
@@ -136,7 +174,7 @@ article_count = len(df_articles)
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    st.metric("전체 분석 댓글 수", f"{total_comments:,}") # type: ignore
+    st.metric("전체 분석 댓글 수", f"{total_comments:,}")  # type: ignore
 with col2:
     st.metric("부정 비율", f"{neg_ratio * 100:.1f}%")
 with col3:
@@ -180,9 +218,9 @@ if comment_data_available:
                 ),
                 tooltip=["sentiment_label", "count"],
             )
-            .properties(title="전체 긍·중립·부정 비율", width=350, height=300)
+            .properties(title="전체 긍정·중립·부정 비율", width=350, height=300)
         )
-        st.altair_chart(pie1, use_container_width=False)
+        st.altair_chart(pie1, width="content")
 
     # (2) 사이트별 댓글 비율 파이차트
     with pie_col2:
@@ -193,8 +231,7 @@ if comment_data_available:
             .reset_index(name="count")
         )
         site_order = [
-            s for s in site_counts["source"].unique().tolist()
-            if s != "gdelt"
+            s for s in site_counts["source"].unique().tolist() if s != "gdelt"
         ]
         pie2 = (
             alt.Chart(site_counts)
@@ -210,10 +247,9 @@ if comment_data_available:
             )
             .properties(title="사이트별 댓글 비율", width=350, height=300)
         )
-        st.altair_chart(pie2, use_container_width=False)
+        st.altair_chart(pie2, width="content")
 
-
-    st.markdown("### 워드클라우드 (한글/영어, 전체 기준)")
+    st.markdown("### 워드클라우드 (한글 / 영어)")
 
     df_wc = df.copy()
 
@@ -270,7 +306,7 @@ if comment_data_available:
         st.warning("댓글 데이터가 없습니다.")
     else:
         source_sent = (
-            df_sites.groupby(["source", "sentiment_label"])
+            df_sites.groupby(["source", "sentiment_label"], observed=True)
             .size()
             .reset_index(name="count")
         )
@@ -283,7 +319,7 @@ if comment_data_available:
                 .sort_values(ascending=False)
                 .index.tolist()
             )
-            if s != "gdelt"   # 🔹 gdelt 제거
+            if s != "gdelt"  # 🔹 gdelt 제거
         ]
 
         stack_chart = (
@@ -292,7 +328,12 @@ if comment_data_available:
             .transform_calculate(pct="datum.count / datum.total")
             .mark_bar()
             .encode(
-                x=alt.X("source:N", title="사이트", sort=source_order, scale=alt.Scale(domain=source_order)),
+                x=alt.X(
+                    "source:N",
+                    title="사이트",
+                    sort=source_order,
+                    scale=alt.Scale(domain=source_order),
+                ),
                 y=alt.Y(
                     "count:Q",
                     stack="normalize",
@@ -317,14 +358,12 @@ if comment_data_available:
             )
             .properties(
                 height=340,
-                width=900,
                 title=alt.TitleParams(
                     "사이트별 감성 레이블 분포 (100% 스택)", fontSize=16
                 ),
             )
         )
         st.altair_chart(stack_chart, use_container_width=True)
-
 
     st.markdown("### 리커트 차트 (사이트별 부정/중립/긍정 균형)")
 
@@ -382,15 +421,16 @@ if comment_data_available:
 
         likert_df = pd.DataFrame(segments)
         likert_order = [
-            s for s in likert_df["source"].unique().tolist()
-            if s != "gdelt"
+            s for s in likert_df["source"].unique().tolist() if s != "gdelt"
         ]
 
         likert_chart = (
             alt.Chart(likert_df)
             .mark_bar()
             .encode(
-                y=alt.Y("source:N", title="사이트", scale=alt.Scale(domain=likert_order)),
+                y=alt.Y(
+                    "source:N", title="사이트", scale=alt.Scale(domain=likert_order)
+                ),
                 x=alt.X(
                     "x0:Q",
                     title="← 부정 / 중립 / 긍정 →",
@@ -471,6 +511,14 @@ if comment_data_available:
                     df_sc["sentiment_label"].map(SENTIMENT_TO_SCORE).astype("float32")
                 )
 
+            df_sc["date_only"] = df_sc["date"].dt.date  # type: ignore
+            if "hour" in df_sc.columns:
+                df_sc["hour_int"] = (
+                    pd.to_numeric(df_sc["hour"], errors="coerce")
+                    .round()
+                    .astype("Int64")
+                )
+
             st.markdown("### 날짜별 감성 스코어 (-1 ~ +1)")
 
             MA_DAYS = 7
@@ -483,6 +531,14 @@ if comment_data_available:
             )
             daily_score["ma"] = (
                 daily_score["score"].rolling(MA_DAYS, min_periods=1).mean()
+            )
+
+            # ✅ 클릭 선택용 selector
+            date_selector = alt.selection_point(
+                name="date_select",
+                fields=["date"],
+                nearest=True,
+                on="click",
             )
 
             base = (
@@ -508,30 +564,56 @@ if comment_data_available:
                 ],
             )
 
-            ma_line = base.mark_line(color="black").encode(y="ma:Q")
+            ma_line = base.mark_line(color="black").encode(y=alt.Y("ma:Q", title=None))
             zero = (
                 alt.Chart(pd.DataFrame({"y": [0]}))
                 .mark_rule(color="#666")
                 .encode(y="y:Q")
             )
-            st.altair_chart(
-                (bars + ma_line + zero).properties(height=320).interactive(),
-                use_container_width=True,
+
+            daily_chart = (
+                alt.layer(bars, ma_line, zero)
+                .add_params(date_selector)
+                .properties(height=320)
+            )
+
+            selected_date = render_chart_with_selection(
+                daily_chart,  # type: ignore
+                selection_name="date_select",
+                selection_field="date",
+                key="daily_sentiment_chart",
+                parser=parse_date_selection_value,
+            )
+
+            show_bucket_analysis_for_selection(
+                selected_value=selected_date,
+                heading_template="#### 🔍 {value} 날짜 구간 분석 (LLM 기반 웹 서치)",
+                df_comments=df_sc,
+                mask_builder=lambda frame, value: frame["date_only"] == value,
+                kind="daily_score",
             )
 
             st.markdown("### 시간대별 감성 스코어 (-1 ~ +1)")
 
             MA_HOURS = 3
             hour_score = (
-                df_sc.dropna(subset=["hour", "sentiment_score"])
-                .groupby("hour")["sentiment_score"]
+                df_sc.dropna(subset=["hour_int", "sentiment_score"])
+                .groupby("hour_int")["sentiment_score"]
                 .agg(score="mean", n="size")
                 .reset_index()
+                .rename(columns={"hour_int": "hour"})
             )
             hour_score["hour"] = hour_score["hour"].astype(int)
             hour_score = hour_score.sort_values("hour")
             hour_score["ma"] = (
                 hour_score["score"].rolling(MA_HOURS, min_periods=1).mean()
+            )
+
+            hour_selector = alt.selection_point(
+                name="hour_select",
+                fields=["hour"],
+                nearest=True,
+                on="click",
             )
 
             base_h = (
@@ -563,9 +645,30 @@ if comment_data_available:
                 .mark_rule(color="#666")
                 .encode(y="y:Q")
             )
-            st.altair_chart(
-                (bars_h + ma_line_h + zero_h).properties(height=320).interactive(),
-                use_container_width=True,
+
+            hour_chart = (
+                alt.layer(bars_h, ma_line_h, zero_h)
+                .add_params(hour_selector)
+                .properties(height=320)
+            )
+
+            selected_hour = render_chart_with_selection(
+                hour_chart,  # type: ignore
+                selection_name="hour_select",
+                selection_field="hour",
+                key="hourly_sentiment_chart",
+                parser=lambda raw: int(raw),
+            )
+
+            show_bucket_analysis_for_selection(
+                selected_value=selected_hour,
+                heading_template="#### 🔍 {value} 구간 분석 (LLM 기반 웹 서치)",
+                df_comments=df_sc,
+                mask_builder=lambda frame, value: (frame["hour_int"] == value).fillna(
+                    False
+                ),
+                kind="hourly_score",
+                label_builder=format_hour_label,
             )
 
             st.markdown("### 댓글 작성량 변화 (날짜 / 시간대)")
@@ -574,6 +677,13 @@ if comment_data_available:
 
             with bar_col1:
                 daily_counts = df_time.groupby("date").size().reset_index(name="count")
+
+                date_sel_volume = alt.selection_point(
+                    name="date_volume_select",
+                    fields=["date"],
+                    on="click",
+                )
+
                 bar_date = (
                     alt.Chart(daily_counts)
                     .mark_bar()
@@ -584,16 +694,40 @@ if comment_data_available:
                         ),
                         tooltip=["date", "count"],
                     )
+                    .add_params(date_sel_volume)
                     .properties(height=300)
                     .interactive()
                 )
-                st.altair_chart(bar_date, use_container_width=True)
 
+                selected_date_vol = render_chart_with_selection(
+                    bar_date,
+                    selection_name="date_volume_select",
+                    selection_field="date",
+                    key="daily_volume_chart",
+                    parser=parse_date_selection_value,
+                )
+
+                show_bucket_analysis_for_selection(
+                    selected_value=selected_date_vol,
+                    heading_template="#### 🔍 {value} 날짜 댓글량 분석 (LLM 기반 웹 서치)",
+                    df_comments=df_sc,
+                    mask_builder=lambda frame, value: frame["date_only"] == value,
+                    kind="daily_volume",
+                )
+
+            # ---- 시간대별 댓글 수 ----
             with bar_col2:
                 if "hour" in df_time.columns:
                     hour_counts = (
                         df_time.groupby("hour").size().reset_index(name="count")
                     )
+
+                    hour_sel_volume = alt.selection_point(
+                        name="hour_volume_select",
+                        fields=["hour"],
+                        on="click",
+                    )
+
                     bar_hour = (
                         alt.Chart(hour_counts)
                         .mark_bar()
@@ -604,10 +738,29 @@ if comment_data_available:
                             ),
                             tooltip=["hour", "count"],
                         )
+                        .add_params(hour_sel_volume)
                         .properties(height=300)
                         .interactive()
                     )
-                    st.altair_chart(bar_hour, use_container_width=True)
+
+                    selected_hour_vol = render_chart_with_selection(
+                        bar_hour,
+                        selection_name="hour_volume_select",
+                        selection_field="hour",
+                        key="hourly_volume_chart",
+                        parser=lambda raw: int(raw),
+                    )
+
+                    show_bucket_analysis_for_selection(
+                        selected_value=selected_hour_vol,
+                        heading_template="#### 🧠 {value} 댓글량 분석 (LLM 기반 웹 서치)",
+                        df_comments=df_sc,
+                        mask_builder=lambda frame, value: (
+                            frame["hour_int"] == value
+                        ).fillna(False),
+                        kind="hourly_volume",
+                        label_builder=format_hour_label,
+                    )
                 else:
                     st.info("시간 정보가 없어 시간대별 댓글 수를 볼 수 없습니다.")
     else:
@@ -645,6 +798,13 @@ else:
             .reset_index(name="count")
             .sort_values("date")
         )
+
+        article_sel = alt.selection_point(
+            name="article_date_select",
+            fields=["date"],
+            on="click",
+        )
+
         chart_articles = (
             alt.Chart(daily_articles)
             .mark_bar()
@@ -653,10 +813,62 @@ else:
                 y=alt.Y("count:Q", title="기사 수", scale=alt.Scale(domainMin=0)),
                 tooltip=["date", "count"],
             )
+            .add_params(article_sel)
             .properties(height=300)
             .interactive()
         )
-        st.altair_chart(chart_articles, use_container_width=True)
+
+        selected_article_date = render_chart_with_selection(
+            chart_articles,
+            selection_name="article_date_select",
+            selection_field="date",
+            key="article_volume_chart",
+            parser=parse_date_selection_value,
+        )
+
+        if selected_article_date is not None:
+            st.markdown(
+                f"#### 🔍 {selected_article_date} 기사 발행량 분석 (LLM 기반 웹 서치)"
+            )
+            if "date" not in df_articles:
+                st.info(
+                    "기사 날짜 정보가 없어 해당 날짜 기사 내용을 확인할 수 없습니다."
+                )
+            else:
+                day_articles = df_articles[
+                    df_articles["date"].dt.date == selected_article_date  # type: ignore
+                ].copy()
+                if day_articles.empty:
+                    st.info("선택한 날짜의 기사 데이터를 찾지 못했습니다.")
+                else:
+                    stats_articles = {
+                        "기사 수": f"{len(day_articles):,}",
+                        "데이터 유형": "GDELT 기사 발행량 (댓글 데이터 없음)",
+                    }
+                    if "source" in day_articles:
+                        top_sources = (
+                            day_articles["source"].value_counts().head(3).index.tolist()
+                        )
+                        if top_sources:
+                            stats_articles["주요 출처"] = ", ".join(top_sources)
+                    if "title" in day_articles:
+                        candidate_titles = (
+                            day_articles["title"].dropna().astype(str).str.strip()
+                        )
+                        top_titles = [t for t in candidate_titles if t][:3]
+                        if top_titles:
+                            stats_articles["대표 기사 제목"] = " | ".join(top_titles)
+
+                    sample_rows_articles = _build_article_sample_rows(day_articles)
+
+                    show_grok_analysis_for_bucket(
+                        kind="daily_article_volume",
+                        label=str(selected_article_date),
+                        df_comments=day_articles,
+                        mask=None,
+                        override_stats=stats_articles,
+                        override_samples=sample_rows_articles,
+                    )
     else:
         st.info("기사 날짜 정보가 없어 추이를 표시할 수 없습니다.")
 
@@ -685,6 +897,6 @@ else:
             )
             .properties(width=350, height=300, title="기사 감성 비율")
         )
-        st.altair_chart(pie_articles, use_container_width=False)
+        st.altair_chart(pie_articles, width="content")
     else:
         st.info("기사 감성 레이블이 없어 감성 분포를 표시할 수 없습니다.")
