@@ -80,6 +80,11 @@ with filter_right:
     else:
         st.info("날짜 정보가 없어 기간 필터를 적용할 수 없습니다.")
 
+# 🔹 필터 없음(사이트 하나도 선택 안 함)인 경우 안내 문구
+if not selected_sources_global:
+    st.warning("최소 하나 이상의 필터(사이트)를 선택해야 합니다.")
+    st.stop()
+
 # 필터 적용 (전체)
 df_filtered = df_raw.copy()
 
