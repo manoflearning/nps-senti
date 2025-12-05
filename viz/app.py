@@ -356,7 +356,7 @@ if comment_data_available:
         likert_df = pd.DataFrame(segments)
         likert_order = [
             s for s in likert_df["source"].unique().tolist()
-            if s != "gdelt"   # 🔹 gdelt 라벨 제거
+            if s != "gdelt"
         ]
 
         likert_chart = (
