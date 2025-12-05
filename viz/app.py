@@ -9,6 +9,28 @@ from nps_dashboard.config import DATA_PATH, ARTICLE_SOURCES, SENTIMENT_OPTIONS
 from nps_dashboard.data import load_data
 from nps_dashboard.wordcloud_tools import generate_wordcloud_image
 
+
+# ----------------------
+# Helper Functions
+# ----------------------
+@st.cache_data(show_spinner="워드클라우드 생성 중...")
+def get_wordcloud_image(
+    df_subset: pd.DataFrame,
+    lang: str,
+    min_freq: int,
+):
+    """
+    워드클라우드 이미지를 캐시해서
+    - 최초 실행 시 생성
+    - 같은 df / lang / min_freq 조합이면 캐시된 결과 재사용
+    """
+    return generate_wordcloud_image(
+        df_subset,
+        lang=lang,
+        min_freq=min_freq,
+    )
+
+
 # ----------------------
 # 0. Streamlit 기본 설정
 # ----------------------
@@ -204,7 +226,7 @@ if comment_data_available:
 
     with wc_col_ko:
         st.write("#### 워드클라우드 (한글)")
-        img_ko = generate_wordcloud_image(df_wc, lang="ko", min_freq=min_freq_ko)
+        img_ko = get_wordcloud_image(df_wc, lang="ko", min_freq=min_freq_ko)
         if img_ko is None:
             st.warning(
                 "한글 워드클라우드를 생성할 수 없습니다. (폰트 미설치/경로 문제 또는 단어 수 부족)"
@@ -214,7 +236,7 @@ if comment_data_available:
 
     with wc_col_en:
         st.write("#### Wordcloud (EN)")
-        img_en = generate_wordcloud_image(df_wc, lang="en", min_freq=min_freq_en)
+        img_en = get_wordcloud_image(df_wc, lang="en", min_freq=min_freq_en)
         if img_en is None:
             st.warning("영어 워드클라우드를 만들 충분한 단어가 없습니다.")
         else:

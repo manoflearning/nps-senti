@@ -7,7 +7,7 @@ VIZ_DIR = Path(__file__).resolve().parent.parent
 ROOT_DIR = VIZ_DIR.parent
 
 DATA_PATH = str(ROOT_DIR / "sentiment_output_data")
-STOPWORDS_EN_PATH = str(VIZ_DIR / "stopwords-en.txt")
+STOPWORDS_EN_PATH = str(VIZ_DIR / "stopwords" / "stopwords-en.txt")
 
 
 def _pick_font_path() -> str | None:
