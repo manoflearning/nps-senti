@@ -10,14 +10,42 @@ dependencies = [
     "nps-senti-crawl",
     "openai>=2.8.1",
     "tenacity>=8.2.3",
+    "streamlit>=1.51.0",
+    "pandas>=2.2.0",
+    "plotly>=5.0.0",
+    "wordcloud>=1.9.0",
+    "konlpy>=0.6.0",
+    "jpype1>=1.5.0",
+    "tzdata>=2024.1",
+    "numpy>=2.3.5",
+    "xai-sdk>=1.5.0",
+    "markdown>=3.6",
 ]
 
 [dependency-groups]
 dev = [
+    "pandas-stubs>=2.3.3.251201",
     "pyright>=1.1.405",
     "pytest>=8.4.2",
-    "ruff>=0.13.0",
+    "ruff>=0.13.0",  
 ]
 
 [tool.uv.sources]
 nps-senti-crawl = { path = "crawl" }
+
+[tool.pyright]
+include = ["viz"]
+exclude = [
+  ".venv",
+  "**/__pycache__",
+  "viz/app.py"
+]
+
+typeCheckingMode = "basic"
+
+reportMissingImports = "none"
+reportMissingTypeStubs = "none"
+reportUnknownMemberType = "none"
+reportUnknownArgumentType = "none"
+reportUnknownVariableType = "none"
+reportUnknownParameterType = "none"
