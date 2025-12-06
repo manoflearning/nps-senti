@@ -66,6 +66,36 @@ def _build_article_sample_rows(day_articles: pd.DataFrame) -> list[dict[str, str
     return samples
 
 
+def _build_policy_sample_rows(
+    df_policy: pd.DataFrame, limit: int = 6
+) -> list[dict[str, str]]:
+    samples: list[dict[str, str]] = []
+    if df_policy.empty:
+        return samples
+
+    if "date" in df_policy.columns:
+        df_iter = df_policy.sort_values("date", ascending=False)
+    else:
+        df_iter = df_policy
+
+    for _, row in df_iter.dropna(subset=["explanation"]).head(limit).iterrows():
+        explanation = str(row.get("explanation") or "").strip()
+        if not explanation:
+            continue
+        src = str(row.get("source") or "").strip()
+        display = f"[{src}] {explanation[:160]}" if src else explanation[:160]
+        samples.append(
+            {
+                "text": str(row.get("text") or "")[:120],
+                "explanation": explanation,
+                "display_explanation": display,
+                "sentiment_label": row.get("sentiment_label", ""),
+            }
+        )
+
+    return samples
+
+
 # ----------------------
 # 0. Streamlit 기본 설정
 # ----------------------
@@ -160,7 +190,7 @@ with filter_meta:
 # ============================================================
 # 2. 종합 분석 (단독)
 # ============================================================
-st.markdown("## 1️⃣ 종합 분석 (전체)")
+st.markdown("## 1️⃣ 종합 분석 - 전체")
 
 total_comments = len(df)
 if total_comments > 0:
@@ -249,7 +279,7 @@ if comment_data_available:
         )
         st.altair_chart(pie2, width="content")
 
-    st.markdown("### 워드클라우드 (한글 / 영어)")
+    st.markdown("### 워드클라우드 (한글 / EN)")
 
     df_wc = df.copy()
 
@@ -276,7 +306,7 @@ if comment_data_available:
             st.image(img_ko, width=430)
 
     with wc_col_en:
-        st.write("#### Wordcloud (EN)")
+        st.write("#### 워드클라우드 (EN)")
         img_en = get_wordcloud_image(df_wc, lang="en", min_freq=min_freq_en)
         if img_en is None:
             st.warning("영어 워드클라우드를 만들 충분한 단어가 없습니다.")
@@ -289,7 +319,8 @@ if comment_data_available:
 # 3. 종합 분석 (사이트별)
 # ============================================================
 if comment_data_available:
-    st.markdown("## 2️⃣ 종합 분석 (사이트별)")
+    st.markdown("## 2️⃣ 종합 분석 - 사이트별")
+    st.markdown('#### 사이트별 댓글 감성 분포 (100% 스택)')
 
     GROUPS = {
         "videos": ["youtube"],
@@ -319,7 +350,7 @@ if comment_data_available:
                 .sort_values(ascending=False)
                 .index.tolist()
             )
-            if s != "gdelt"  # 🔹 gdelt 제거
+            if s != "gdelt"
         ]
 
         stack_chart = (
@@ -358,9 +389,6 @@ if comment_data_available:
             )
             .properties(
                 height=340,
-                title=alt.TitleParams(
-                    "사이트별 감성 레이블 분포 (100% 스택)", fontSize=16
-                ),
             )
         )
         st.altair_chart(stack_chart, use_container_width=True)
@@ -895,8 +923,51 @@ else:
                 ),
                 tooltip=["sentiment_label", "count"],
             )
-            .properties(width=350, height=300, title="기사 감성 비율")
+            .properties(width=350, height=300)
         )
         st.altair_chart(pie_articles, width="content")
     else:
         st.info("기사 감성 레이블이 없어 감성 분포를 표시할 수 없습니다.")
+
+st.divider()
+st.markdown("## 🧭 국민연금 정책 방향성 분석")
+st.markdown("### – 온라인 여론 데이터 기반 제안 –")
+
+policy_df = df_filtered.copy()
+if policy_df.empty:
+    st.info("필터 조건에 해당하는 데이터가 없어 정책 방향 분석을 수행할 수 없습니다.")
+elif "explanation" not in policy_df.columns:
+    st.info(
+        "explanation 데이터가 포함되지 않은 데이터셋이라 정책 방향 분석을 건너뜁니다."
+    )
+else:
+    policy_df = policy_df.dropna(subset=["explanation"]).copy()
+    policy_df["explanation"] = policy_df["explanation"].astype(str).str.strip()
+    policy_df = policy_df[policy_df["explanation"].str.len() > 0]
+
+    if policy_df.empty:
+        st.info("선택된 사이트에서 활용 가능한 explanation 텍스트가 없습니다.")
+    else:
+        stats_policy: dict[str, str] = {
+            "선택된 사이트": ", ".join(selected_sources_global),
+            "explanation 수": f"{len(policy_df):,}",
+        }
+        if "date" in policy_df.columns and policy_df["date"].notna().any():
+            stats_policy["데이터 기간"] = (
+                f"{policy_df['date'].min().date()} ~ {policy_df['date'].max().date()}"
+            )
+        if "source" in policy_df.columns:
+            top_sources = policy_df["source"].value_counts().head(5).index.tolist()
+            if top_sources:
+                stats_policy["주요 사이트"] = ", ".join(top_sources)
+
+        sample_rows_policy = _build_policy_sample_rows(policy_df)
+
+        show_grok_analysis_for_bucket(
+            kind="policy_direction",
+            label="선택된 사이트 의견",
+            df_comments=policy_df,
+            mask=None,
+            override_stats=stats_policy,
+            override_samples=sample_rows_policy,
+        )

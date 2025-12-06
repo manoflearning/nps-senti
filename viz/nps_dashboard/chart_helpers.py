@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from html import escape
+from importlib import import_module
 from typing import Any, Callable, Dict, List, Literal, cast
 
 import altair as alt
@@ -8,6 +9,8 @@ import pandas as pd
 import streamlit as st
 
 from nps_dashboard.xai_live import analyze_bucket_with_grok
+
+_markdown_renderer: Callable[..., str] | None | bool = None
 
 SelectionParser = Callable[[Any], Any]
 MaskBuilder = Callable[[pd.DataFrame, Any], pd.Series]
@@ -18,6 +21,7 @@ BucketKind = Literal[
     "daily_volume",
     "hourly_volume",
     "daily_article_volume",
+    "policy_direction",
 ]
 
 
@@ -41,6 +45,21 @@ def format_hour_label(value: Any) -> str:
         special = " (정오)"
 
     return f"{meridiem} {hour_12}시{special}"
+
+
+def _render_policy_markdown(text: str) -> str:
+    global _markdown_renderer
+    if _markdown_renderer is None:
+        try:
+            module = import_module("markdown")
+            _markdown_renderer = getattr(module, "markdown")
+        except (ImportError, AttributeError):
+            _markdown_renderer = False
+
+    if callable(_markdown_renderer):
+        return _markdown_renderer(text or "", extensions=["extra"])
+
+    return escape(text or "").replace("\n", "<br>")
 
 
 def render_chart_with_selection(
@@ -168,9 +187,13 @@ def show_grok_analysis_for_bucket(
             .to_dict(orient="records")
         )
 
-    with st.spinner(
-        "LLM이 웹 검색과 댓글 표본을 바탕으로 이유를 분석하는 중입니다..."
-    ):
+    spinner_msg = (
+        "감성 분석 결과 explanation과 웹 검색을 기반으로 정책 방향성을 정리하는 중입니다..."
+        if kind == "policy_direction"
+        else "LLM이 웹 검색과 댓글 표본을 바탕으로 이유를 분석하는 중입니다..."
+    )
+
+    with st.spinner(spinner_msg):
         analysis, citations = analyze_bucket_with_grok(
             kind=kind,
             label=label,
@@ -183,6 +206,11 @@ def show_grok_analysis_for_bucket(
             f"<li>{escape((r.get('display_explanation') or r.get('explanation', '') or '').strip())}</li>"
             for r in sample_rows
         )
+        sample_heading = (
+            "💬 표본 기사 (일부)"
+            if kind == "daily_article_volume"
+            else "💬 표본 explanation (일부)"
+        )
         sample_html = f"""
 <div style="
     background-color:#f5f5f5;
@@ -191,7 +219,7 @@ def show_grok_analysis_for_bucket(
     padding:12px 14px;
     margin-top:10px;
 ">
-    <div style="font-weight:bold;margin-bottom:6px;">💬 표본 explanation (일부)</div>
+    <div style="font-weight:bold;margin-bottom:6px;">{sample_heading}</div>
     <ul style="padding-left:18px;margin:0;">
         {items}
     </ul>
@@ -199,9 +227,13 @@ def show_grok_analysis_for_bucket(
 """
         st.markdown(sample_html, unsafe_allow_html=True)
 
-    escaped_analysis = escape(analysis or "분석 결과를 가져오지 못했습니다.").replace(
-        "\n", "<br>"
-    )
+    if kind == "policy_direction":
+        rendered = _render_policy_markdown(analysis or "")
+        analysis_html = rendered or "<p>분석 결과를 가져오지 못했습니다.</p>"
+    else:
+        analysis_html = escape(analysis or "분석 결과를 가져오지 못했습니다.").replace(
+            "\n", "<br>"
+        )
     citations_html = ""
     if citations:
         cite_items = "".join(
@@ -222,7 +254,7 @@ def show_grok_analysis_for_bucket(
     margin-top:6px;
 ">
     <div style="font-weight:bold;margin-bottom:8px;">💡 LLM 분석 요약</div>
-    <div>{escaped_analysis}</div>
+    <div>{analysis_html}</div>
     {citations_html}
 </div>
 """

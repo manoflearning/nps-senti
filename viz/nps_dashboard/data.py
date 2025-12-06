@@ -91,6 +91,7 @@ def load_data(path: str) -> pd.DataFrame:
         "comment_text",
         "text",
         "title",
+        "explanation",
         "source",
         "published_at",
         "comment_publishedAt",

@@ -48,6 +48,7 @@ def _build_prompt(
         "daily_volume",
         "hourly_volume",
         "daily_article_volume",
+        "policy_direction",
     ],
     label: str,
     stats: Dict[str, Any],
@@ -63,6 +64,7 @@ def _build_prompt(
         "daily_volume": "날짜별 댓글 작성량",
         "hourly_volume": "시간대별 댓글 작성량",
         "daily_article_volume": "날짜별 기사 발행량",
+        "policy_direction": "선택 사이트 기반 국민연금 정책 방향성 요약",
     }
     kind_ko = kind_map.get(kind, kind)
 
@@ -116,6 +118,23 @@ def _build_prompt(
             "이 구간은 기사 발행량 데이터이므로, 제공된 기사 제목(title)과 본문(text)을 참고하여 "
             "해당 날짜에 어떤 이슈가 있었는지를 요약해 주세요. 댓글 감성 데이터가 없다는 점을 명확히 인지하세요."
         )
+    if kind == "policy_direction":
+        lines.append(
+            "이 분석은 현재 필터에 선택된 온라인 커뮤니티/포털에서 수집한 댓글 explanation을 바탕으로 합니다."
+        )
+        lines.append(
+            "댓글 표본에 담긴 요구, 우려, 제안, 칭찬을 근거로 국민연금 제도/홍보/서비스 측면에서 취할 수 있는 정책 방향을 3가지 내외로 제안하세요."
+        )
+        lines.append(
+            "가능하면 커뮤니케이션 메시지, 제도 개선, 고객 경험 개선 등으로 카테고리를 나누고, 각 제안마다 기대 효과를 간단히 덧붙이세요."
+        )
+        lines.append("꼭 아래 두 개 파트로 Markdown 형식을 지켜 작성하세요:")
+        lines.append(
+            "1. **선택 사이트 여론 종합** – 제공된 explanation과 웹 검색을 결합해 주요 여론/근거를 bullet로 정리"
+        )
+        lines.append(
+            "2. **정책 제안** – 번호 매겨진 리스트로 2~3개의 실행 제안과 기대 효과를 기술"
+        )
     lines.append(
         "검색에 시간이 다소 걸리더라도 xAI Live Search 결과를 실제로 확인한 뒤, 발견한 이벤트와 감성 데이터의 상관성을 요약해 주세요."
     )
@@ -130,6 +149,7 @@ def analyze_bucket_with_grok(
         "daily_volume",
         "hourly_volume",
         "daily_article_volume",
+        "policy_direction",
     ],
     label: str,
     stats: Dict[str, Any],
@@ -195,6 +215,7 @@ def _build_search_parameters(
         "daily_volume",
         "hourly_volume",
         "daily_article_volume",
+        "policy_direction",
     ],
     label: str,
 ) -> SearchParameters:
