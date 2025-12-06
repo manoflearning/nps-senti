@@ -320,7 +320,7 @@ if comment_data_available:
 # ============================================================
 if comment_data_available:
     st.markdown("## 2️⃣ 종합 분석 - 사이트별")
-    st.markdown('#### 사이트별 댓글 감성 분포 (100% 스택)')
+    st.markdown("#### 사이트별 댓글 감성 분포 (100% 스택)")
 
     GROUPS = {
         "videos": ["youtube"],

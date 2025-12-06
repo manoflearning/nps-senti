@@ -90,7 +90,9 @@ def strip_web_noise(text: str) -> str:
             continue
 
         # 소셜 홍보 라인 제거
-        if _RE_SOCIAL_PREFIX.search(s) and (_RE_URL.search(s) or "@" in s or "threads.com" in s.lower()):
+        if _RE_SOCIAL_PREFIX.search(s) and (
+            _RE_URL.search(s) or "@" in s or "threads.com" in s.lower()
+        ):
             continue
 
         # boilerplate 라인 제거

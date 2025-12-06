@@ -13,8 +13,8 @@ from .text_processing import (
     get_en_stopwords,
     is_english_word,
     is_korean_word,
-    strip_web_noise,     # ✅ 추가: Thread/URL/boilerplate 제거
-    is_gibberish_en,     # ✅ 추가: 난수 토큰 제거 휴리스틱
+    strip_web_noise,  # ✅ 추가: Thread/URL/boilerplate 제거
+    is_gibberish_en,  # ✅ 추가: 난수 토큰 제거 휴리스틱
 )
 
 
@@ -107,7 +107,8 @@ def compute_word_stats(
     )
 
     text_cols_priority = [
-        c for c in ["comment", "comment_text", "text", "title"]
+        c
+        for c in ["comment", "comment_text", "text", "title"]
         if c in df_subset.columns
     ]
     if not text_cols_priority:
@@ -242,9 +243,9 @@ def generate_wordcloud_image(
             prefer_horizontal=1.0,
         )
         if lang == "ko":
-            wc_kwargs["font_path"] = FONT_PATH # type: ignore
+            wc_kwargs["font_path"] = FONT_PATH  # type: ignore
 
-        wc = WordCloud(**wc_kwargs).generate_from_frequencies(freq_dict) # type: ignore
+        wc = WordCloud(**wc_kwargs).generate_from_frequencies(freq_dict)  # type: ignore
 
     except (ValueError, OSError):
         return None
