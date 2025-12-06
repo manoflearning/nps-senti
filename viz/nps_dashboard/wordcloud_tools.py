@@ -13,6 +13,8 @@ from .text_processing import (
     get_en_stopwords,
     is_english_word,
     is_korean_word,
+    strip_web_noise,     # ✅ 추가: Thread/URL/boilerplate 제거
+    is_gibberish_en,     # ✅ 추가: 난수 토큰 제거 휴리스틱
 )
 
 
@@ -88,9 +90,16 @@ def compute_word_stats(
 ):
     """
     ko: KoNLPy(Okt) nouns 기반(한국어 불용어 파일 X)
+        - ✅ strip_web_noise 적용 (URL/boilerplate 제거)
     en: wordcloud 기본 STOPWORDS + (선택) stopwords-en.txt
+        - ✅ strip_web_noise 적용
+        - ✅ is_gibberish_en 휴리스틱 적용 (난수 토큰 제거)
     """
     en_sw = get_en_stopwords()
+
+    # (선택) 정말 남기고 싶은 영어 약어를 예외 처리하고 싶으면 여기에 추가
+    # 예: {"nps", "oecd"}
+    en_whitelist: set[str] = set()
 
     freq: Counter[str] = Counter()
     sent_counts: dict[str, dict[str, int]] = defaultdict(
@@ -98,8 +107,7 @@ def compute_word_stats(
     )
 
     text_cols_priority = [
-        c
-        for c in ["comment", "comment_text", "text", "title"]
+        c for c in ["comment", "comment_text", "text", "title"]
         if c in df_subset.columns
     ]
     if not text_cols_priority:
@@ -116,6 +124,9 @@ def compute_word_stats(
             raw_text = _iter_row_text(row, text_cols_priority)
             if not raw_text:
                 continue
+
+            # ✅ 추가: 웹/플랫폼 잡음 줄단위 및 URL 제거
+            raw_text = strip_web_noise(raw_text)
 
             cleaned = clean_text(raw_text)
             if not cleaned:
@@ -141,16 +152,25 @@ def compute_word_stats(
             if not raw_text:
                 continue
 
+            # ✅ 추가: Thread/Threads 홍보줄, URL, 저작권 boilerplate, dc official app 제거
+            raw_text = strip_web_noise(raw_text)
+
             cleaned = clean_text(raw_text)
             if not cleaned:
                 continue
 
             for tok in cleaned.split():
                 tok = tok.lower().strip()
+
                 if not is_english_word(tok):
                     continue
                 if tok in en_sw:
                     continue
+
+                # ✅ 추가: 난수/ID/도메인 조각 제거
+                if is_gibberish_en(tok, whitelist=en_whitelist):
+                    continue
+
                 freq[tok] += 1
                 sent_counts[tok][label] += 1
 
@@ -211,8 +231,8 @@ def generate_wordcloud_image(
         if lang == "ko" and FONT_PATH is None:
             return None
 
-        wc = WordCloud(
-            font_path=FONT_PATH,
+        # ✅ 기존 로직 유지: ko는 FONT_PATH 지정, en은 font_path 없어도 돌아가게
+        wc_kwargs = dict(
             width=width,
             height=height,
             background_color="white",
@@ -220,7 +240,12 @@ def generate_wordcloud_image(
             max_font_size=max_font_size,
             collocations=False,
             prefer_horizontal=1.0,
-        ).generate_from_frequencies(freq_dict)
+        )
+        if lang == "ko":
+            wc_kwargs["font_path"] = FONT_PATH # type: ignore
+
+        wc = WordCloud(**wc_kwargs).generate_from_frequencies(freq_dict) # type: ignore
+
     except (ValueError, OSError):
         return None
 
